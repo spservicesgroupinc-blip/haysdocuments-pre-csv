@@ -1,0 +1,23 @@
+node_modules/
+build/*
+!build/icon.ico
+!build/icon.png
+dist/
+dist-electron/
+dist_desktop/
+out/
+release/*
+!release/vercel.json
+electron-dist/
+.vercel/
+coverage/
+test-results/
+playwright-report/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Generated copy-paste payload for the Apps Script editor (npm run apps:paste).
+# src/apps-script/Code.gs is the source of truth.
+src/apps-script/PASTE-INTO-APPS-SCRIPT.txt
