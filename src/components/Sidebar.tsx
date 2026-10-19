@@ -11,11 +11,10 @@ import {
   FileCheck,
   FileInput,
   Landmark,
-  AlertCircle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-/** Every page reachable from the workspace side menu. */
+/** Every page reachable from workspace navigation. */
 export type WorkspaceTab =
   | 'home'
   | 'intake'
@@ -51,207 +50,65 @@ export const WORKSPACE_SECTIONS: WorkspaceSection[] = [
   { id: 'documents', label: 'Documents', icon: FileCheck, group: 'Documents' },
 ];
 
-const WORKSPACE_GROUPS = ['Workspace', 'Job details', 'Production', 'Documents'] as const;
-
-interface NavItemProps {
-  section: WorkspaceSection;
-  isActive: boolean;
-  badge?: number;
-  missingFieldCount?: number;
-  /** Hide the amber missing-field badge while no real job is in progress. */
-  showMissingWarnings?: boolean;
-  onNavigate: (tab: WorkspaceTab) => void;
-  variant: 'sidebar' | 'strip';
-}
-
-const NavItem: React.FC<NavItemProps> = ({
-  section,
-  isActive,
-  badge,
-  missingFieldCount,
-  showMissingWarnings = true,
-  onNavigate,
-  variant,
-}) => {
-  const Icon = section.icon;
-  const base =
-    variant === 'sidebar'
-      ? 'flex w-full items-center gap-2.5 px-2.5 min-h-11 rounded-lg text-[13px] font-medium border transition-colors'
-      : 'inline-flex shrink-0 items-center gap-2 px-3 min-h-11 rounded-lg text-[13px] font-medium border transition-colors whitespace-nowrap';
-
-  return (
-    <button
-      type="button"
-      onClick={() => onNavigate(section.id)}
-      aria-current={isActive ? 'page' : undefined}
-      className={`${base} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-inset ${
-        isActive
-          ? 'bg-red-50 border-red-200 text-red-700'
-          : 'bg-transparent border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-      }`}
-    >
-      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-red-600' : 'text-slate-500'}`} aria-hidden />
-      <span className={variant === 'sidebar' ? 'min-w-0 flex-1 text-left leading-4' : ''}>{section.label}</span>
-      {typeof badge === 'number' && badge > 0 && (
-        <span
-          className={`${
-            variant === 'sidebar' ? 'ml-auto' : ''
-          } min-w-[18px] h-[18px] px-1 rounded text-[11px] font-bold flex items-center justify-center tabular-nums ${
-            isActive ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
-          }`}
-        >
-          {badge}
-        </span>
-      )}
-      {showMissingWarnings && typeof missingFieldCount === 'number' && missingFieldCount > 0 && (
-        <span
-          title={`${missingFieldCount} required fields missing — opens this section at the first one`}
-          aria-label={`${missingFieldCount} required fields missing — opens this section at the first one`}
-          className="ml-auto inline-flex shrink-0 items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800 tabular-nums"
-        >
-          <AlertCircle className="h-3 w-3" aria-hidden />
-          {missingFieldCount}
-        </span>
-      )}
-    </button>
-  );
-};
-
-interface SidebarProps {
+interface WorkspaceNavigationProps {
   activeTab: WorkspaceTab;
   onNavigate: (tab: WorkspaceTab) => void;
-  savedJobsCount: number;
-  customerName: string;
-  jobNumber: string;
-  isDirty: boolean;
   missingFieldCounts?: Partial<Record<WorkspaceTab, number>>;
-  /** Hide missing-field badges while no real job is in progress. */
-  showMissingWarnings?: boolean;
+  showMissingWarnings: boolean;
 }
 
-/** Desktop side menu: one entry per section, plus the current record's context. */
-export const Sidebar: React.FC<SidebarProps> = ({
-  activeTab,
-  onNavigate,
-  savedJobsCount,
-  customerName,
-  jobNumber,
-  isDirty,
-  missingFieldCounts,
-  showMissingWarnings = true,
+const DESTINATIONS = [
+  { id: 'home', label: 'Home', icon: Home, sections: ['home'] },
+  { id: 'intake', label: 'Intake', icon: FileInput, sections: ['intake'] },
+  { id: 'customer', label: 'Job details', icon: UserCircle, sections: ['customer', 'insurance', 'financials', 'mortgage'] },
+  { id: 'team', label: 'Production', icon: CheckCircle, sections: ['team', 'productionNotes', 'checklist', 'changeOrder'] },
+  { id: 'documents', label: 'Documents', icon: FileCheck, sections: ['documents'] },
+] as const;
+
+/** Five stable destinations; each workspace exposes only its own sections. */
+export const WorkspaceNavigation: React.FC<WorkspaceNavigationProps> = ({
+  activeTab, onNavigate, missingFieldCounts, showMissingWarnings,
 }) => {
-  const hasCustomer = Boolean(customerName.trim());
+  const activeDestination = DESTINATIONS.find((item) => (item.sections as readonly string[]).includes(activeTab))!;
+  const sections = WORKSPACE_SECTIONS.filter((section) => (activeDestination.sections as readonly string[]).includes(section.id));
 
   return (
-    <aside
-      className="hidden lg:flex flex-col w-60 shrink-0 self-start sticky top-20 max-h-[calc(100dvh-6rem)]"
-      aria-label="Workspace navigation"
-    >
-      <div className="min-h-0 overflow-y-auto bg-white rounded-xl border border-slate-200 p-2">
-        <nav aria-label="Job workspace" className="space-y-2">
-          {WORKSPACE_GROUPS.map((group) => (
-            <div key={group}>
-              <p className="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                {group}
-              </p>
-              <div className="space-y-0.5">
-                {WORKSPACE_SECTIONS.filter((section) => section.group === group).map((section) => (
-                  <NavItem
-                    key={section.id}
-                    section={section}
-                    isActive={activeTab === section.id}
-                    badge={section.id === 'home' ? savedJobsCount : undefined}
-                    missingFieldCount={missingFieldCounts?.[section.id]}
-                    showMissingWarnings={showMissingWarnings}
-                    onNavigate={onNavigate}
-                    variant="sidebar"
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+    <div className="mb-5 sm:mb-6">
+      <nav aria-label="Main navigation" className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-slate-200 bg-white pb-safe shadow-[0_-4px_16px_rgb(15_23_42/0.04)] sm:static sm:flex sm:gap-1 sm:border-t-0 sm:border-b sm:bg-transparent sm:pb-0 sm:shadow-none">
+        {DESTINATIONS.map((item) => {
+          const Icon = item.icon;
+          const selected = item === activeDestination;
+          return (
+            <button
+              type="button" key={item.id} aria-label={item.label}
+              aria-current={selected ? 'page' : undefined}
+              onClick={() => onNavigate(selected ? activeTab : item.id)}
+              className={`relative flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-600 sm:min-h-12 sm:flex-row sm:gap-2 sm:px-5 sm:text-sm ${selected ? 'text-red-700' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+            >
+              <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
+              <span>{item.label}</span>
+              {selected && <span className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-red-700 sm:inset-x-4 sm:top-auto sm:bottom-[-1px]" />}
+            </button>
+          );
+        })}
+      </nav>
+      {sections.length > 1 && (
+        <nav aria-label={`${activeDestination.label} sections`} className="mt-3 grid grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 sm:flex sm:flex-wrap sm:w-fit">
+          {sections.map((section) => {
+            const Icon = section.icon;
+            const missing = showMissingWarnings ? missingFieldCounts?.[section.id] ?? 0 : 0;
+            const selected = section.id === activeTab;
+            return (
+              <button key={section.id} type="button" onClick={() => onNavigate(section.id)} aria-current={selected ? 'page' : undefined}
+                className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 sm:text-[13px] ${selected ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>
+                <Icon className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />
+                {section.label}
+                {missing > 0 && <span aria-label={`${missing} required fields missing`} className={`inline-flex h-5 min-w-5 items-center justify-center rounded px-1 text-[10px] ${selected ? 'bg-white/15 text-white' : 'bg-amber-50 text-amber-800'}`}>{missing}</span>}
+              </button>
+            );
+          })}
         </nav>
-      </div>
-
-      {/* Current record context */}
-      <div className="mt-3 shrink-0 bg-white rounded-xl border border-slate-200 px-3.5 py-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-          Current job
-        </p>
-        <div className="mt-2 flex items-center gap-2">
-          <span
-            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              hasCustomer ? (isDirty ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-slate-300'
-            }`}
-            aria-hidden
-          />
-          <p className="text-[13px] font-semibold text-slate-900 truncate">
-            {hasCustomer ? customerName : 'New job'}
-          </p>
-        </div>
-        <p className="mt-1 text-[11px] text-slate-500 tabular-nums truncate">
-          {jobNumber || 'No job number yet'}
-        </p>
-        {isDirty && (
-          <span className="mt-2 inline-block text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-            Unsaved changes
-          </span>
-        )}
-      </div>
-    </aside>
+      )}
+    </div>
   );
 };
-
-interface MobileSectionNavProps {
-  activeTab: WorkspaceTab;
-  onNavigate: (tab: WorkspaceTab) => void;
-  savedJobsCount: number;
-  missingFieldCounts?: Partial<Record<WorkspaceTab, number>>;
-  /** Hide missing-field badges while no real job is in progress. */
-  showMissingWarnings?: boolean;
-}
-
-/** Phones use a section picker; tablets keep a scrollable navigation strip. */
-export const MobileSectionNav: React.FC<MobileSectionNavProps> = ({
-  activeTab,
-  onNavigate,
-  savedJobsCount,
-  missingFieldCounts,
-  showMissingWarnings = true,
-}) => (
-  <div className="lg:hidden mb-4 min-w-0">
-    <label className="block sm:hidden text-xs font-semibold text-slate-600 mb-1.5" htmlFor="workspace-section">
-      Workspace section
-    </label>
-    <select
-      id="workspace-section"
-      value={activeTab}
-      onChange={(event) => onNavigate(event.target.value as WorkspaceTab)}
-      className="sm:hidden w-full min-w-0 min-h-11 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-    >
-      {WORKSPACE_GROUPS.map((group) => (
-        <optgroup key={group} label={group}>
-          {WORKSPACE_SECTIONS.filter((section) => section.group === group).map((section) => (
-            <option key={section.id} value={section.id}>
-              {section.label}{section.id === 'home' && savedJobsCount > 0 ? ` (${savedJobsCount})` : ''}{showMissingWarnings && (missingFieldCounts?.[section.id] ?? 0) > 0 ? ` — ${missingFieldCounts?.[section.id]} missing` : ''}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
-    <nav className="hidden sm:flex gap-1 overflow-x-auto no-scrollbar" aria-label="Workspace navigation">
-      {WORKSPACE_SECTIONS.map((section) => (
-        <NavItem
-          key={section.id}
-          section={section}
-          isActive={activeTab === section.id}
-          badge={section.id === 'home' ? savedJobsCount : undefined}
-          missingFieldCount={missingFieldCounts?.[section.id]}
-          showMissingWarnings={showMissingWarnings}
-          onNavigate={onNavigate}
-          variant="strip"
-        />
-      ))}
-    </nav>
-  </div>
-);

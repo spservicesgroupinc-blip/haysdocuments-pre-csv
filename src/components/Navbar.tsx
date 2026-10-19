@@ -14,6 +14,8 @@ import {
 import { BrandLogo } from './BrandLogo';
 
 interface NavbarProps {
+  isHome: boolean;
+  hasJobInProgress: boolean;
   jobNumber: string;
   customerName: string;
   onReset: () => void;
@@ -45,6 +47,8 @@ const BTN_BASE =
   'inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40 disabled:opacity-45 disabled:cursor-not-allowed';
 
 export const Navbar: React.FC<NavbarProps> = ({
+  isHome,
+  hasJobInProgress,
   jobNumber,
   customerName,
   onReset,
@@ -93,7 +97,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           {/* Job context */}
-          <div className="hidden xl:flex items-center gap-2 min-w-0 rounded-lg border border-slate-200 bg-slate-50/80 px-3 h-9">
+          {!isHome && <div className="hidden xl:flex items-center gap-2 min-w-0 rounded-lg border border-slate-200 bg-slate-50/80 px-3 h-9">
             <span
               className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                 hasCustomer ? (isDirty ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-slate-300'
@@ -112,10 +116,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                 Unsaved
               </span>
             )}
-          </div>
+          </div>}
 
           {/* Actions */}
-          <div className="flex w-full lg:w-auto items-center justify-end gap-1.5 sm:gap-2 shrink-0">
+          <div className={`flex ${isHome ? 'w-auto' : 'w-full lg:w-auto'} items-center justify-end gap-1.5 sm:gap-2 shrink-0`}>
             {(isOffline || pendingSyncCount > 0 || draftStatus !== 'idle') && (
               <span
                 title={
@@ -131,7 +135,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {draftStatus === 'error' ? 'Autosave needs attention' : draftStatus === 'saving' ? 'Saving draft…' : isOffline ? 'Saved on device' : isSyncing ? 'Syncing…' : pendingSyncCount > 0 ? 'Saved on device' : 'Draft synced'}
               </span>
             )}
-            <button
+            {!isHome && <button
               type="button"
               onClick={onOpenSavedCustomers}
               aria-label="Open saved jobs"
@@ -145,9 +149,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {savedJobsCount}
                 </span>
               )}
-            </button>
+            </button>}
 
-            <button
+            {!isHome && <button
               type="button"
               onClick={onReset}
               title="Start a new job"
@@ -155,9 +159,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Plus className="w-4 h-4" aria-hidden />
               <span>New job</span>
-            </button>
+            </button>}
 
-            <button
+            {(!isHome || hasJobInProgress) && <button
               type="button"
               onClick={onSaveJob}
               disabled={isSavingJob || !isDatabaseConfigured}
@@ -172,7 +176,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Check className="w-4 h-4" aria-hidden />
               )}
               <span>{isSavingJob ? 'Saving…' : 'Save job'}</span>
-            </button>
+            </button>}
 
             {/* Account and integrations */}
             <div

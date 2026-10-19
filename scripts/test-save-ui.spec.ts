@@ -9,22 +9,26 @@ const ok = (route: Route, data: unknown) => route.fulfill({
 });
 
 const sectionLabels = {
-  home: 'Jobs', intake: 'Intake', customer: 'Customer & Property', insurance: 'Insurance & Claim',
+  home: 'Home', intake: 'Intake', customer: 'Customer & Property', insurance: 'Insurance & Claim',
   financials: 'Financials', mortgage: 'Mortgage', team: 'Team', productionNotes: 'Production Notes',
   checklist: 'Checklist', changeOrder: 'Change Order', documents: 'Documents',
 };
 async function navigate(page: Page, section: keyof typeof sectionLabels) {
-  const width = page.viewportSize()?.width ?? 1440;
-  if (width < 640) await page.locator('#workspace-section').selectOption(section);
-  else await page.getByRole('navigation', { name: width >= 1024 ? 'Job workspace' : 'Workspace navigation', exact: true })
-    .getByRole('button', { name: new RegExp(`^${sectionLabels[section]}(?:\\s|$)`) }).click();
+  const group = ['customer', 'insurance', 'financials', 'mortgage'].includes(section) ? 'Job details'
+    : ['team', 'productionNotes', 'checklist', 'changeOrder'].includes(section) ? 'Production' : sectionLabels[section];
+  await page.getByRole('navigation', { name: 'Main navigation', exact: true })
+    .getByRole('button', { name: group, exact: true }).click();
+  if (group === 'Job details' || group === 'Production') {
+    await page.getByRole('navigation', { name: `${group} sections`, exact: true })
+      .getByRole('button', { name: new RegExp(`^${sectionLabels[section]}(?:\\s|$)`) }).click();
+  }
 }
 
 async function start(page: Page, handler: (route: Route, body: any) => Promise<void>, savedJobs: unknown[] = []) {
   await page.addInitScript((account) => {
     localStorage.setItem('hays.db.session', JSON.stringify({ token: 'ui-session', expiresAt: '2099-01-01T00:00:00Z', user: account }));
   }, user);
-  await page.route('https://script.google.com/macros/s/TEST/exec', async (route) => {
+  await page.route('https://script.google.com/macros/s/*/exec', async (route) => {
     const body = route.request().postDataJSON();
     if (body.action === 'checkSession') await ok(route, { user });
     else if (body.action === 'listJobs') await ok(route, savedJobs);
@@ -243,6 +247,55 @@ const libraryJobs = [
   { recordId: 'saved-1', customerName: 'Zulu customer', jobNumber: 'JOB-2', lossAddress: '2 Main Street', updatedAt: '2026-10-07T12:00:00Z' },
   { recordId: 'saved-2', customerName: 'Alpha customer', jobNumber: 'JOB-10', lossAddress: '10 Main Street', updatedAt: '2026-10-06T12:00:00Z' },
 ];
+
+test('home offers direct starting actions and five destinations at every screen size', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await start(page, async (route, body) => {
+    if (body.action === 'getDraft') await ok(route, { draft: null });
+    else if (body.action === 'saveDraft') await ok(route, { job: body.draft.job, updatedAt: new Date().toISOString() });
+  });
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const navigation = page.getByRole('navigation', { name: 'Main navigation', exact: true });
+    await expect(navigation.getByRole('button')).toHaveCount(5);
+    await expect(navigation.getByRole('button', { name: 'Home', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('complementary')).toHaveCount(0);
+    await expect(page.getByRole('progressbar')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'New job', exact: true })).toHaveCount(1);
+    await page.getByRole('button', { name: 'Import job information', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Bring in your job information' })).toBeVisible();
+    await navigate(page, 'home');
+    await page.getByRole('button', { name: 'Enter manually', exact: true }).click();
+    await expect(page.locator('#customer-customerName')).toBeVisible();
+    await navigate(page, 'home');
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.getByRole('button', { name: /^0 saved jobs/ }).click();
+    await expect(page.getByRole('searchbox', { name: 'Search jobs', exact: true })).toBeFocused();
+  }
+  expect(errors).toEqual([]);
+});
+
+test('dashboard next steps focus the missing field and sync notices leave phone navigation accessible', async ({ page, context }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await start(page, async (route, body) => {
+    if (body.action === 'getDraft') await ok(route, { draft: { job, recordId: job.recordId, updatedAt: '2026-10-06T12:00:00Z' } });
+    else if (body.action === 'saveDraft') await ok(route, { job: body.draft.job, updatedAt: new Date().toISOString() });
+  });
+  await expect(page.getByRole('progressbar', { name: 'Required job fields' })).toHaveAttribute('aria-valuenow', '1');
+  await page.getByRole('button', { name: 'Loss property address', exact: true }).click();
+  await expect(page.locator('#customer-lossAddress')).toBeFocused();
+  await page.locator('#customer-lossAddress').fill('123 Test Street');
+  await navigate(page, 'checklist');
+  await navigate(page, 'home');
+  await expect(page.getByRole('progressbar', { name: 'Required job fields' })).toHaveAttribute('aria-valuenow', '2');
+  await context.setOffline(true);
+  const navigation = page.getByRole('navigation', { name: 'Main navigation', exact: true });
+  await expect(page.getByText('Offline', { exact: true })).toBeVisible();
+  await navigation.getByRole('button', { name: 'Job details', exact: true }).click();
+  await expect(page.locator('#customer-lossAddress')).toHaveValue('123 Test Street');
+  await expect(navigation.getByRole('button', { name: 'Job details', exact: true })).toHaveAttribute('aria-current', 'page');
+});
 
 test('jobs can be searched and sorted, and Continue editing keeps current draft edits', async ({ page }) => {
   let loads = 0;

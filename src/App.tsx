@@ -56,7 +56,7 @@ import {
 import type { SyncJobSummary } from './services/localDb';
 import { LoginScreen } from './components/LoginScreen';
 import { Navbar } from './components/Navbar';
-import { MobileSectionNav, Sidebar, WORKSPACE_SECTIONS } from './components/Sidebar';
+import { WorkspaceNavigation, WORKSPACE_SECTIONS } from './components/Sidebar';
 import type { WorkspaceTab } from './components/Sidebar';
 import { SavedCustomersPage } from './components/SavedCustomersPage';
 import { HomeScreen } from './components/HomeScreen';
@@ -308,7 +308,7 @@ export default function App() {
     await handleRefreshJobs();
   };
 
-  /** Side-menu navigation. Returning home always refreshes the saved list. */
+  /** Workspace navigation. Returning home always refreshes the saved list. */
   const handleNavigate = (tab: WorkspaceTab) => {
     setActiveTab(tab);
     if (tab === 'home') {
@@ -861,9 +861,12 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col">
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-3 focus:text-red-700 focus:shadow-lg">Skip to workspace</a>
       {/* Top Navbar */}
       <Navbar
+        isHome={activeTab === 'home'}
+        hasJobInProgress={hasJobInProgress}
         jobNumber={jobData.customer.jobNumber}
         customerName={jobData.customer.customerName}
         onReset={handleReset}
@@ -904,35 +907,20 @@ export default function App() {
       )}
 
       {/* Main */}
-      <main className="flex-1 w-full min-w-0 max-w-[1400px] mx-auto px-3 py-4 sm:px-5 sm:py-6">
+      <main id="main-content" tabIndex={-1} className="flex-1 w-full min-w-0 max-w-[1280px] mx-auto px-4 pt-3 pb-6 sm:px-6 sm:py-5 lg:px-8">
+        <WorkspaceNavigation
+          activeTab={activeTab}
+          onNavigate={handleNavigate}
+          missingFieldCounts={missingFieldCounts}
+          showMissingWarnings={hasJobInProgress}
+        />
         {activeTab !== 'home' && (
           <div className="mb-4 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm lg:hidden" aria-label="Current job">
             <span className="font-semibold text-slate-900">{jobData.customer.customerName || 'New job'}</span>
             <span className="text-slate-500">· {jobData.customer.jobNumber}</span>
           </div>
         )}
-        {/* Compact section menu below the lg breakpoint */}
-        <MobileSectionNav
-          activeTab={activeTab}
-          onNavigate={handleNavigate}
-          savedJobsCount={savedJobs.length}
-          missingFieldCounts={missingFieldCounts}
-          showMissingWarnings={hasJobInProgress}
-        />
-
         <div className="flex items-start gap-6">
-          {/* Side menu — one entry per section */}
-          <Sidebar
-            activeTab={activeTab}
-            onNavigate={handleNavigate}
-            savedJobsCount={savedJobs.length}
-            customerName={jobData.customer.customerName}
-            jobNumber={jobData.customer.jobNumber}
-            isDirty={isDirty}
-            missingFieldCounts={missingFieldCounts}
-            showMissingWarnings={hasJobInProgress}
-          />
-
           {/* Section workspace */}
           <div className="flex-1 min-w-0 space-y-4 sm:space-y-6">
             {/* Keep intake mounted across sections so navigation preserves pending analysis. */}
@@ -961,8 +949,12 @@ export default function App() {
                   hasJobInProgress={hasJobInProgress}
                   isDirty={isDirty}
                   missingFields={missingFields}
+                  syncError={syncState.lastError}
+                  isSyncing={syncState.syncing || syncState.draftStatus === 'saving'}
                   onNewJob={handleReset}
-                  onContinueJob={() => setActiveTab('customer')}
+                  onContinueJob={() => handleNavigate('customer')}
+                  onNavigate={handleNavigate}
+                  onOpenLibrary={() => document.getElementById('saved-jobs-search')?.focus()}
                   onReviewField={handleReviewField}
                 />
                 <SavedCustomersPage
@@ -978,7 +970,6 @@ export default function App() {
                   onRefresh={handleRefreshJobs}
                   onOpenJob={handleLoadJob}
                   onDeleteJob={handleDeleteJob}
-                  onNewJob={handleReset}
                 />
               </>
             )}
@@ -1147,7 +1138,7 @@ export default function App() {
       />
 
       {/* PWA install / update prompt + offline + pending-sync status */}
-      <PwaStatus />
+      <PwaStatus hasBottomNavigation />
     </div>
   );
 }

@@ -23,7 +23,7 @@ interface BeforeInstallPromptEvent extends Event {
  * Uses the brand's floating-layer conventions (rounded-xl, bordered, shadow-lg,
  * amber = caution, red = the single primary action).
  */
-export const PwaStatus: React.FC = () => {
+export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBottomNavigation = false }) => {
   const [sync, setSync] = useState<SyncState>(getSyncState);
   const [updateReady, setUpdateReady] = useState<(() => Promise<void>) | null>(null);
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
@@ -77,7 +77,7 @@ export const PwaStatus: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:inset-x-auto sm:right-5 sm:bottom-5 sm:max-w-sm z-50 flex flex-col items-stretch sm:items-end gap-2">
+    <div className={`fixed inset-x-4 ${hasBottomNavigation ? 'bottom-[calc(5rem+env(safe-area-inset-bottom))]' : 'bottom-[calc(1rem+env(safe-area-inset-bottom))]'} sm:inset-x-auto sm:right-5 sm:bottom-5 sm:max-w-sm z-50 flex flex-col items-stretch sm:items-end gap-2`}>
       {updateReady && (
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-lg flex items-start gap-3">
           <RotateCw className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
