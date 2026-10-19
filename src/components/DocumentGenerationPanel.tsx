@@ -187,19 +187,19 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-3 sm:p-5">
+    <div className="bg-surface rounded-xl border border-line p-3 sm:p-5">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-line-soft">
         <div>
           <div className="flex items-center gap-3">
-            <span className="p-2 rounded-lg bg-slate-100 text-slate-500">
+            <span className="p-2 rounded-lg bg-subtle text-muted">
               <Layers className="w-4 h-4" />
             </span>
             <div>
-              <h2 className="text-[15px] font-semibold text-slate-900 tracking-tight">
+              <h2 className="text-[15px] font-semibold text-primary tracking-tight">
                 Documents
               </h2>
-              <p className="text-[12px] text-slate-500 mt-0.5">
+              <p className="text-[12px] text-muted mt-0.5">
                 Review, preview, and download the production packet or individual forms
               </p>
             </div>
@@ -212,13 +212,13 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
             onClick={onSaveToDrive}
             disabled={isDriveLoading}
             type="button"
-            className="inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 border border-slate-200 transition shadow-sm disabled:opacity-50"
+            className="inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-semibold bg-subtle text-body hover:bg-selection hover:text-primary border border-line transition shadow-sm disabled:opacity-50"
             title="Save the complete PDF packet to shared Drive storage through Google Apps Script"
           >
             {isDriveLoading ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin text-red-600" />
+              <Loader2 className="w-4 h-4 mr-2 animate-spin text-brand-copy" />
             ) : (
-              <HardDriveUpload className="w-4 h-4 mr-2 text-blue-600" />
+              <HardDriveUpload className="w-4 h-4 mr-2 text-info-copy" />
             )}
             Save to Google Drive
           </button>
@@ -227,13 +227,13 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
             onClick={onSyncToSheets}
             disabled={isSheetsLoading}
             type="button"
-            className="inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 border border-slate-200 transition shadow-sm disabled:opacity-50"
+            className="inline-flex items-center px-3.5 py-2 rounded-xl text-xs font-semibold bg-subtle text-body hover:bg-selection hover:text-primary border border-line transition shadow-sm disabled:opacity-50"
             title="Update this job in the shared Google Sheets database through Google Apps Script"
           >
             {isSheetsLoading ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin text-emerald-600" />
+              <Loader2 className="w-4 h-4 mr-2 animate-spin text-success-copy" />
             ) : (
-              <TableProperties className="w-4 h-4 mr-2 text-emerald-600" />
+              <TableProperties className="w-4 h-4 mr-2 text-success-copy" />
             )}
             Sync to Google Sheets
           </button>
@@ -241,24 +241,24 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
       </div>
 
       {/* Quality Gate Status Strip */}
-      <div className="mt-4 p-3 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs bg-slate-50 border-slate-200">
+      <div className="mt-4 p-3 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs bg-canvas border-line">
         <div className="flex items-center gap-2.5">
           {isQualityGatePassed ? (
-            <div className="p-1 rounded-full bg-emerald-100 text-emerald-700">
+            <div className="p-1 rounded-full bg-success-soft text-success-copy">
               <ShieldCheck className="w-4 h-4" />
             </div>
           ) : (
-            <div className="p-1 rounded-full bg-amber-100 text-amber-700">
+            <div className="p-1 rounded-full bg-warning-soft text-warning-copy">
               <AlertCircle className="w-4 h-4" />
             </div>
           )}
           <div>
-            <span className="font-bold text-slate-800">
+            <span className="font-bold text-primary">
               {isQualityGatePassed
                 ? 'Required fields complete'
                 : `${missingFields.length} required field${missingFields.length === 1 ? '' : 's'} to review`}
             </span>
-            <span className="text-slate-500 block text-[11px]">
+            <span className="text-muted block text-[11px]">
               {isQualityGatePassed
                 ? 'Customer, claim, and financial fields are filled in. Review the packet before sharing.'
                 : 'Choose a missing field below to fill it in. Downloads remain available with blank placeholders.'}
@@ -266,11 +266,11 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-600">
-          <span className="bg-white px-2 py-1 rounded border border-slate-200">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-secondary">
+          <span className="bg-surface px-2 py-1 rounded border border-line">
             RCV: {formatCurrency(jobData.financials.totalApprovedRcv)}
           </span>
-          <span className="bg-white px-2 py-1 rounded border border-slate-200">
+          <span className="bg-surface px-2 py-1 rounded border border-line">
             Net: {formatCurrency(jobData.financials.netClaimValue)}
           </span>
         </div>
@@ -283,20 +283,20 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
               key={field.inputId}
               type="button"
               onClick={() => onReviewField(field)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-warning-line bg-warning-tint px-3 py-2 text-xs font-medium text-warning-copy-strong hover:bg-warning-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700"
             >
               <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
               {field.label}
             </button>
-          ) : <span key={field.inputId} className="text-xs text-amber-900">{field.label}</span>)}
+          ) : <span key={field.inputId} className="text-xs text-warning-copy-strong">{field.label}</span>)}
         </div>
       )}
 
       {/* Cloud Links Notifications if saved */}
       {(driveSuccessLink || sheetsSuccessLink) && (
-        <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-800">
+        <div className="mt-4 p-3 bg-success-tint border border-success-line rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs text-success-copy-strong">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-success-copy shrink-0" />
             <span>Shared storage updated:</span>
           </div>
           <div className="flex items-center gap-3">
@@ -305,7 +305,7 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
                 href={driveSuccessLink}
                 target="_blank"
                 rel="noreferrer"
-                className="font-bold underline flex items-center gap-1 hover:text-emerald-950"
+                className="font-bold underline flex items-center gap-1 hover:text-success-copy-strong"
               >
                 Open in Drive <ExternalLink className="w-3 h-3" />
               </a>
@@ -315,7 +315,7 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
                 href={sheetsSuccessLink}
                 target="_blank"
                 rel="noreferrer"
-                className="font-bold underline flex items-center gap-1 hover:text-emerald-950"
+                className="font-bold underline flex items-center gap-1 hover:text-success-copy-strong"
               >
                 Open Google Sheet <ExternalLink className="w-3 h-3" />
               </a>
@@ -325,22 +325,22 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
       )}
 
       {/* Complete packet */}
-      <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
+      <div className="mt-6 rounded-xl border border-line bg-canvas p-3 sm:p-5 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
         <div className="flex items-start gap-3.5 min-w-0">
-          <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0">
-            <FileCheck2 className="w-5 h-5 text-slate-500" />
+          <div className="w-10 h-10 rounded-lg bg-surface border border-line flex items-center justify-center shrink-0">
+            <FileCheck2 className="w-5 h-5 text-muted" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-[14px] font-semibold text-slate-900">Complete production packet</h3>
-              <span className="text-[11px] font-medium text-slate-600 bg-white border border-slate-200 rounded px-1.5 py-0.5">
+              <h3 className="text-[14px] font-semibold text-primary">Complete production packet</h3>
+              <span className="text-[11px] font-medium text-secondary bg-surface border border-line rounded px-1.5 py-0.5">
                 9 pages
               </span>
             </div>
-            <p className="mt-1 text-[12px] text-slate-500 max-w-xl">
+            <p className="mt-1 text-[12px] text-muted max-w-xl">
               All eight documents bundled in exact production order.
             </p>
-            <p className="mt-1.5 font-mono text-[11px] text-slate-400 break-all">{combinedFileName}</p>
+            <p className="mt-1.5 font-mono text-[11px] text-faint break-all">{combinedFileName}</p>
           </div>
         </div>
 
@@ -359,7 +359,7 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
               })
             }
             type="button"
-            className="flex-1 sm:flex-initial inline-flex items-center justify-center px-3.5 py-2.5 rounded-lg text-[13px] font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center px-3.5 py-2.5 rounded-lg text-[13px] font-semibold bg-surface hover:bg-canvas text-body border border-line transition"
           >
             <Eye className="w-4 h-4 mr-1.5" />
             Preview
@@ -383,13 +383,13 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
             onClick={handleDownloadZipPackage}
             disabled={isZipping}
             type="button"
-            className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2.5 rounded-lg text-[13px] font-semibold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition disabled:opacity-50"
+            className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2.5 rounded-lg text-[13px] font-semibold bg-surface hover:bg-canvas text-body border border-line transition disabled:opacity-50"
             title="Download a ZIP containing all 9 files plus a summary"
           >
             {isZipping ? (
               <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
             ) : (
-              <Archive className="w-4 h-4 mr-1.5 text-slate-400" />
+              <Archive className="w-4 h-4 mr-1.5 text-faint" />
             )}
             Download all as ZIP
           </button>
@@ -399,10 +399,10 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
       {/* Grid of Individual Forms */}
       <div className="mt-8">
         <div className="flex items-center justify-between mb-3">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted">
             Individual documents
           </h4>
-          <span className="text-xs text-slate-500">Preview or download a single form</span>
+          <span className="text-xs text-muted">Preview or download a single form</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -411,28 +411,28 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
             return (
               <div
                 key={doc.id}
-                className="bg-slate-50 hover:bg-white rounded-xl p-4 border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all flex flex-col justify-between"
+                className="bg-canvas hover:bg-surface rounded-xl p-4 border border-line hover:border-line-strong hover:shadow-sm transition-all flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <span className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200/80 px-2 py-0.5 rounded">
+                    <span className="text-[11px] font-bold text-brand-copy bg-brand-tint border border-brand-line/80 px-2 py-0.5 rounded">
                       {doc.code} • {doc.pages}
                     </span>
-                    <span className="text-[10px] text-slate-400 font-mono truncate max-w-[140px]">
+                    <span className="text-[10px] text-faint font-mono truncate max-w-[140px]">
                       {doc.buildFileName(jobData)}
                     </span>
                   </div>
-                  <h5 className="font-bold text-slate-900 text-sm">{doc.title}</h5>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">{doc.description}</p>
+                  <h5 className="font-bold text-primary text-sm">{doc.title}</h5>
+                  <p className="text-xs text-muted mt-1 leading-relaxed">{doc.description}</p>
                 </div>
 
-                <div className="flex items-center space-x-2 mt-4 pt-3 border-t border-slate-200/70">
+                <div className="flex items-center space-x-2 mt-4 pt-3 border-t border-line/70">
                   <button
                     onClick={() => onPreview(doc)}
                     type="button"
-                    className="flex-1 inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white text-slate-700 hover:bg-slate-100 border border-slate-200 transition"
+                    className="flex-1 inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-surface text-body hover:bg-subtle border border-line transition"
                   >
-                    <Eye className="w-3.5 h-3.5 mr-1 text-slate-500" />
+                    <Eye className="w-3.5 h-3.5 mr-1 text-muted" />
                     Preview
                   </button>
                   <button
@@ -463,21 +463,21 @@ ${docList.map((d) => `- ${d.buildFileName(jobData)}`).join('\n')}
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
               Generation Completion Note ({lastGeneratedSummary.timestamp})
             </span>
-            <span className="text-[10px] text-slate-400 font-mono">
+            <span className="text-[10px] text-faint font-mono">
               {lastGeneratedSummary.filesCount} file(s) generated
             </span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-slate-300">
             <div>
-              <span className="text-slate-400 block text-[10px]">Total Contract RCV:</span>
+              <span className="text-faint block text-[10px]">Total Contract RCV:</span>
               <span className="font-bold text-white">{lastGeneratedSummary.calculatedRCV}</span>
             </div>
             <div>
-              <span className="text-slate-400 block text-[10px]">Net Claim Value:</span>
+              <span className="text-faint block text-[10px]">Net Claim Value:</span>
               <span className="font-bold text-emerald-400">{lastGeneratedSummary.calculatedNet}</span>
             </div>
             <div>
-              <span className="text-slate-400 block text-[10px]">50% Down Payment:</span>
+              <span className="text-faint block text-[10px]">50% Down Payment:</span>
               <span className="font-bold text-sky-400">{lastGeneratedSummary.calculatedDown}</span>
             </div>
           </div>

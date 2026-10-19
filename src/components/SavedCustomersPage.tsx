@@ -53,11 +53,11 @@ function formatWhen(value: string): string {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  Draft: 'bg-slate-100 text-slate-700 border-slate-200',
-  Active: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  'On Hold': 'bg-amber-100 text-amber-700 border-amber-200',
-  Complete: 'bg-blue-100 text-blue-700 border-blue-200',
-  Cancelled: 'bg-rose-100 text-rose-700 border-rose-200',
+  Draft: 'bg-subtle text-body border-line',
+  Active: 'bg-success-soft text-success-copy border-success-line',
+  'On Hold': 'bg-warning-soft text-warning-copy border-warning-line',
+  Complete: 'bg-info-soft text-info-copy border-info-line',
+  Cancelled: 'bg-rose-100 text-rose-700 border-danger-line',
 };
 
 /** Home page for saved jobs, including cached records waiting to sync. */
@@ -103,18 +103,18 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
   }, [jobs, query, sort]);
 
   return (
-    <section className="bg-white rounded-xl border border-slate-200" aria-label="Jobs">
+    <section className="bg-surface rounded-xl border border-line" aria-label="Jobs">
       {/* Page header */}
-      <div className="px-3 sm:px-5 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="px-3 sm:px-5 py-4 border-b border-line flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="shrink-0 p-2.5 rounded-lg bg-red-50 text-red-600">
+          <div className="shrink-0 p-2.5 rounded-lg bg-brand-tint text-brand-copy">
             <FolderOpen className="w-5 h-5" aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold text-slate-900 tracking-tight">
+            <h2 className="text-lg font-semibold text-primary tracking-tight">
               Job library
             </h2>
-            <p className="mt-0.5 text-sm text-slate-500 break-words">
+            <p className="mt-0.5 text-sm text-muted break-words">
               {isDatabaseConfigured
                 ? databaseEmail
                   ? `Signed in as ${databaseEmail}`
@@ -123,7 +123,7 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
             </p>
           </div>
         </div>
-        <span className="text-sm text-slate-500 shrink-0">
+        <span className="text-sm text-muted shrink-0">
           {isDatabaseConfigured
             ? `${jobs.length} saved job${jobs.length === 1 ? '' : 's'}`
             : 'Not connected'}
@@ -131,12 +131,12 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
       </div>
 
       {/* Toolbar */}
-      <div className="px-3 sm:px-5 py-3 border-b border-slate-100 flex flex-col lg:flex-row lg:items-end gap-3">
+      <div className="px-3 sm:px-5 py-3 border-b border-line-soft flex flex-col lg:flex-row lg:items-end gap-3">
         <div className="relative flex-1">
-          <label htmlFor="saved-jobs-search" className="mb-1.5 block text-xs font-semibold text-slate-600">
+          <label htmlFor="saved-jobs-search" className="mb-1.5 block text-xs font-semibold text-secondary">
             Search jobs
           </label>
-          <span className="absolute bottom-0 left-0 h-11 pl-3 flex items-center pointer-events-none text-slate-400">
+          <span className="absolute bottom-0 left-0 h-11 pl-3 flex items-center pointer-events-none text-faint">
             <Search className="w-4 h-4" aria-hidden="true" />
           </span>
           <input
@@ -145,19 +145,19 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Customer, job number, address or claim…"
-            className="min-h-11 w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg text-slate-900 focus:bg-white focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition"
+            className="min-h-11 w-full pl-9 pr-3 py-2 text-sm bg-canvas border border-line-strong rounded-lg text-primary focus:bg-surface focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition"
           />
         </div>
         <div className="flex items-end gap-2">
           <div className="min-w-0 flex-1 lg:w-44">
-            <label htmlFor="saved-jobs-sort" className="mb-1.5 block text-xs font-semibold text-slate-600">
+            <label htmlFor="saved-jobs-sort" className="mb-1.5 block text-xs font-semibold text-secondary">
               Sort by
             </label>
             <select
               id="saved-jobs-sort"
               value={sort}
               onChange={(event) => setSort(event.target.value as JobSort)}
-              className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+              className="min-h-11 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-body focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
             >
               <option value="recent">Recent update</option>
               <option value="customer">Customer A–Z</option>
@@ -168,7 +168,7 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
             type="button"
             onClick={onRefresh}
             disabled={isLoading || !isDatabaseConfigured}
-            className="inline-flex min-h-11 items-center justify-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-lg border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
+            className="inline-flex min-h-11 items-center justify-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-lg border border-line text-body bg-surface hover:bg-canvas disabled:opacity-50 disabled:cursor-not-allowed transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
           >
             {isLoading ? (
               <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
@@ -183,7 +183,7 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
       {/* Body */}
       <div className="px-3 sm:px-5 py-4 min-h-[240px]">
         {!isDatabaseConfigured && (
-          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+          <div className="flex items-start gap-3 rounded-xl border border-warning-line bg-warning-tint p-4 text-warning-copy-strong">
             <CloudOff className="w-5 h-5 shrink-0 mt-0.5" />
             <div className="text-xs leading-relaxed">
               <p className="font-bold">Your job library is not connected yet.</p>
@@ -199,9 +199,9 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
         )}
 
         {isDatabaseConfigured && isDeveloperBypass && (
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-            <p className="text-[13px] font-semibold text-amber-900">Developer mode</p>
-            <p className="mt-0.5 text-[12px] leading-relaxed text-amber-800">
+          <div className="mb-4 rounded-xl border border-warning-line bg-warning-tint px-4 py-3">
+            <p className="text-[13px] font-semibold text-warning-copy-strong">Developer mode</p>
+            <p className="mt-0.5 text-[12px] leading-relaxed text-warning-copy-strong">
               Sign-in is bypassed with a shared secret. Anyone holding the web-app URL and this secret
               has full access — remove <code className="font-mono">VITE_DEV_SHARED_SECRET</code> and the
               Apps Script <code className="font-mono">SHARED_SECRET</code> property before going live.
@@ -210,28 +210,28 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
         )}
 
         {isDatabaseConfigured && error && (
-          <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-rose-900">
+          <div className="flex items-start gap-3 rounded-xl border border-danger-line bg-danger-tint p-4 text-rose-900">
             <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
             <p className="text-xs font-medium leading-relaxed">{error}</p>
           </div>
         )}
 
         {isDatabaseConfigured && isLoading && jobs.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-14 text-slate-500" role="status">
-            <Loader2 className="w-6 h-6 animate-spin text-red-600" />
+          <div className="flex flex-col items-center justify-center py-14 text-muted" role="status">
+            <Loader2 className="w-6 h-6 animate-spin text-brand-copy" />
             <p className="mt-3 text-sm font-semibold">Loading saved jobs…</p>
           </div>
         )}
 
         {isDatabaseConfigured && !isLoading && !error && visible.length === 0 && (
           <div className="flex flex-col items-center justify-center py-14 text-center">
-            <div className="p-3 rounded-2xl bg-slate-100 text-slate-400">
+            <div className="p-3 rounded-2xl bg-subtle text-faint">
               <Database className="w-6 h-6" />
             </div>
-            <p className="mt-3 text-sm font-bold text-slate-800">
+            <p className="mt-3 text-sm font-bold text-primary">
               {jobs.length === 0 ? 'No saved jobs yet' : 'No matches'}
             </p>
-            <p className="mt-1 text-sm text-slate-500 max-w-sm">
+            <p className="mt-1 text-sm text-muted max-w-sm">
               {jobs.length === 0
                 ? 'Start a job, add the customer details, and save it here for later.'
                 : 'Try another customer, address or job number.'}
@@ -249,7 +249,7 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
               <button
                 type="button"
                 onClick={() => onSearchChange('')}
-                className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
+                className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg border border-line px-4 py-2 text-sm font-semibold text-body hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
                 Clear search
@@ -268,23 +268,23 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
                   aria-current={isCurrent ? 'true' : undefined}
                   className={`rounded-xl border p-3.5 transition ${
                     isCurrent
-                      ? 'border-red-300 bg-red-50/40'
-                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                      ? 'border-brand-line bg-brand-tint/40'
+                      : 'border-line hover:border-line-strong hover:bg-canvas'
                   }`}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="min-w-0 max-w-full font-semibold text-base text-slate-900 break-words">
+                        <span className="min-w-0 max-w-full font-semibold text-base text-primary break-words">
                           {job.customerName || 'Unnamed customer'}
                         </span>
-                        <span className="text-xs font-semibold text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded">
+                        <span className="text-xs font-semibold text-brand-copy-strong bg-brand-tint border border-brand-line px-2 py-0.5 rounded">
                           {job.jobNumber ? `Job ${job.jobNumber}` : 'No job number'}
                         </span>
                         {job.status && (
                           <span
                             className={`text-xs font-semibold px-2 py-0.5 rounded border ${
-                              STATUS_STYLES[job.status] ?? 'bg-slate-100 text-slate-700 border-slate-200'
+                              STATUS_STYLES[job.status] ?? 'bg-subtle text-body border-line'
                             }`}
                           >
                             {job.status}
@@ -293,26 +293,26 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
                         {job.syncState === 'pending-save' && (
                           <span
                             title="Saved on this device — waiting to sync to the database"
-                            className="text-xs font-semibold px-2 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-700"
+                            className="text-xs font-semibold px-2 py-0.5 rounded border border-warning-line bg-warning-tint text-warning-copy"
                           >
                             Pending sync
                           </span>
                         )}
                         {isCurrent && (
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded border border-red-300 bg-white text-red-700">
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded border border-brand-line bg-surface text-brand-copy-strong">
                             Open now
                           </span>
                         )}
                       </div>
                       {job.jobName && (
-                        <p className="mt-1 text-sm font-medium text-slate-700 break-words">{job.jobName}</p>
+                        <p className="mt-1 text-sm font-medium text-body break-words">{job.jobName}</p>
                       )}
-                      <p className="mt-1 text-sm text-slate-600 break-words">
+                      <p className="mt-1 text-sm text-secondary break-words">
                         {job.lossAddress || 'No loss address'}
                         {job.carrier ? ` • ${job.carrier}` : ''}
                         {job.claimNumber ? ` • Claim ${job.claimNumber}` : ''}
                       </p>
-                      <p className="mt-1 text-xs text-slate-500 break-words">
+                      <p className="mt-1 text-xs text-muted break-words">
                         Updated {formatWhen(job.updatedAt)}
                         {job.updatedBy ? ` by ${job.updatedBy}` : ''}
                       </p>
@@ -332,7 +332,7 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
                         type="button"
                         onClick={() => onDeleteJob(job)}
                         aria-label={`Delete job ${job.jobNumber || job.customerName || 'unnamed job'}`}
-                        className="inline-flex min-h-11 items-center justify-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-lg border border-rose-200 text-rose-700 bg-white hover:bg-rose-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
+                        className="inline-flex min-h-11 items-center justify-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-lg border border-danger-line text-rose-700 bg-surface hover:bg-danger-tint transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
                       >
                         <Trash2 className="w-4 h-4" aria-hidden="true" />
                         Delete
@@ -347,7 +347,7 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
       </div>
 
       {/* Footer */}
-      <div className="px-3 sm:px-5 py-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-slate-500">
+      <div className="px-3 sm:px-5 py-3 border-t border-line-soft flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-muted">
         <span role="status" aria-live="polite">
           {isDatabaseConfigured
             ? `${visible.length} of ${jobs.length} saved job${jobs.length === 1 ? '' : 's'}`

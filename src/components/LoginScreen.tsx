@@ -31,26 +31,26 @@ interface LoginScreenProps {
 }
 
 const INPUT_CLASS =
-  'w-full h-11 rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-[14px] text-slate-900 ' +
-  'placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/15 transition';
+  'w-full h-11 rounded-lg border border-line-strong bg-surface pl-10 pr-3 text-[14px] text-primary ' +
+  'placeholder:text-faint focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/15 transition';
 
-const LABEL_CLASS = 'block text-[12px] font-medium text-slate-600 mb-1.5';
+const LABEL_CLASS = 'block text-[12px] font-medium text-secondary mb-1.5';
 
 const ICON_WRAP =
-  'absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400';
+  'absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-faint';
 
 const PRIMARY_BUTTON =
   'w-full h-11 inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 text-white text-[14px] ' +
   'font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm';
 
 const SECONDARY_BUTTON =
-  'w-full h-11 inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white ' +
-  'text-slate-700 text-[14px] font-semibold hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors';
+  'w-full h-11 inline-flex items-center justify-center gap-2 rounded-lg border border-line-strong bg-surface ' +
+  'text-body text-[14px] font-semibold hover:bg-canvas disabled:opacity-50 disabled:cursor-not-allowed transition-colors';
 
 const ErrorNote: React.FC<{ message: string }> = ({ message }) => (
-  <div className="flex items-start gap-2.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5">
+  <div className="flex items-start gap-2.5 rounded-lg border border-danger-line bg-danger-tint px-3 py-2.5">
     <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-    <p className="text-[12px] leading-relaxed text-rose-800">{message}</p>
+    <p className="text-[12px] leading-relaxed text-danger-copy">{message}</p>
   </div>
 );
 
@@ -187,21 +187,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const isRegistering = mode === 'register';
 
   return (
-    <div className="min-h-dvh bg-slate-50 flex flex-col items-center justify-center px-3 py-6 sm:px-5 sm:py-10">
+    <div className="min-h-dvh bg-canvas flex flex-col items-center justify-center px-3 py-6 sm:px-5 sm:py-10">
       <div className="w-full max-w-[400px]">
         <div className="mb-6 ml-auto w-56 max-w-full"><ThemePicker /></div>
         {/* Brand */}
         <div className="flex flex-col items-center mb-7">
           <BrandLogo size={38} className="justify-center" />
-          <p className="mt-2.5 text-[13px] text-slate-500">Restoration Document Suite</p>
+          <p className="mt-2.5 text-[13px] text-muted">Restoration Document Suite</p>
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6">
-          <h2 className="text-[15px] font-semibold text-slate-900">
+        <div className="bg-surface rounded-xl border border-line p-4 sm:p-6">
+          <h2 className="text-[15px] font-semibold text-primary">
             {isRegistering ? 'Create account' : 'Sign in'}
           </h2>
-          <p className="mt-1 text-[12px] text-slate-500">
+          <p className="mt-1 text-[12px] text-muted">
             {isRegistering
               ? requiresInviteCode
                 ? 'You will need the invite code from your administrator.'
@@ -210,9 +210,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </p>
 
           {!isDatabaseConfigured && (
-            <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+            <div className="mt-4 flex items-start gap-2.5 rounded-lg border border-warning-line bg-warning-tint px-3 py-2.5">
               <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-[12px] leading-relaxed text-amber-900">
+              <p className="text-[12px] leading-relaxed text-warning-copy-strong">
                 The customer database is not connected. Set{' '}
                 <code className="font-mono">VITE_APPS_SCRIPT_URL</code>, then restart the dev server.
               </p>
@@ -355,7 +355,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               </button>
 
               {registration?.defaultRole && (
-                <p className="text-[11px] text-slate-500 text-center">
+                <p className="text-[11px] text-muted text-center">
                   New accounts get {registration.defaultRole} access. An administrator can change
                   this.
                 </p>
@@ -425,10 +425,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <>
                   <div className="relative pt-1">
                     <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                      <div className="w-full border-t border-slate-200" />
+                      <div className="w-full border-t border-line" />
                     </div>
                     <div className="relative flex justify-center">
-                      <span className="bg-white px-2 text-[11px] text-slate-400">New here?</span>
+                      <span className="bg-surface px-2 text-[11px] text-faint">New here?</span>
                     </div>
                   </div>
 
@@ -447,12 +447,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           )}
         </div>
 
-        <p className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
-          <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+        <p className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-muted">
+          <ShieldCheck className="w-3.5 h-3.5 text-faint" />
           Accounts lock temporarily after repeated failed attempts.
         </p>
 
-        <p className="mt-2 text-center text-[11px] text-slate-400">
+        <p className="mt-2 text-center text-[11px] text-faint">
           Hays &amp; Sons Complete Restoration — Fort Wayne Division
         </p>
       </div>

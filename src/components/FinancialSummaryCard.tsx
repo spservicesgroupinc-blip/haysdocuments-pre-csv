@@ -14,8 +14,8 @@ interface FinancialSummaryCardProps {
 }
 
 const INPUT_CLASS =
-  'w-full h-10 pl-7 pr-3 rounded-lg border border-slate-300 bg-white text-[15px] font-semibold text-slate-900 tabular-nums ' +
-  'placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/15 transition';
+  'w-full h-10 pl-7 pr-3 rounded-lg border border-line-strong bg-surface text-[15px] font-semibold text-primary tabular-nums ' +
+  'placeholder:font-normal placeholder:text-faint focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/15 transition';
 
 export const FinancialSummaryCard: React.FC<FinancialSummaryCardProps> = ({
   financials,
@@ -46,35 +46,35 @@ export const FinancialSummaryCard: React.FC<FinancialSummaryCardProps> = ({
       note: 'Due on final walk-through',
       share: '25%',
       amount: financials.balancePayment,
-      barClass: 'bg-slate-300',
+      barClass: 'bg-track',
     },
   ];
 
   return (
-    <section className="bg-white rounded-xl border border-slate-200 shadow-sm">
+    <section className="bg-surface rounded-xl border border-line shadow-sm">
       {/* Header */}
-      <div className="px-3 sm:px-5 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="px-3 sm:px-5 py-4 border-b border-line-soft flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-[15px] font-semibold text-slate-900 tracking-tight">
+          <h2 className="text-[15px] font-semibold text-primary tracking-tight">
             Contract Financials
           </h2>
-          <p className="mt-0.5 text-[12px] text-slate-500">
+          <p className="mt-0.5 text-[12px] text-muted">
             Calculated automatically and applied to the agreement and checklist
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-[12px] text-slate-500">
-          <CalendarClock className="w-4 h-4 text-slate-400" />
+        <div className="flex items-center gap-2 text-[12px] text-muted">
+          <CalendarClock className="w-4 h-4 text-faint" />
           <span>
             Commence{' '}
-            <span className="font-semibold text-slate-900 tabular-nums">
+            <span className="font-semibold text-primary tabular-nums">
               {financials.commenceDays} days
             </span>
           </span>
           <span className="text-slate-300 select-none">·</span>
           <span>
             Complete{' '}
-            <span className="font-semibold text-slate-900 tabular-nums">
+            <span className="font-semibold text-primary tabular-nums">
               {financials.completeDays} days
             </span>
           </span>
@@ -87,12 +87,12 @@ export const FinancialSummaryCard: React.FC<FinancialSummaryCardProps> = ({
           <div>
             <label
               htmlFor="rcv-input"
-              className="block text-[12px] font-medium text-slate-600 mb-1.5"
+              className="block text-[12px] font-medium text-secondary mb-1.5"
             >
               Total approved RCV
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-faint text-sm">
                 $
               </span>
               <input
@@ -106,18 +106,18 @@ export const FinancialSummaryCard: React.FC<FinancialSummaryCardProps> = ({
                 className={INPUT_CLASS}
               />
             </div>
-            <p className="mt-1.5 text-[11px] text-slate-500">Replacement cost value from the carrier</p>
+            <p className="mt-1.5 text-[11px] text-muted">Replacement cost value from the carrier</p>
           </div>
 
           <div>
             <label
               htmlFor="deductible-input"
-              className="block text-[12px] font-medium text-slate-600 mb-1.5"
+              className="block text-[12px] font-medium text-secondary mb-1.5"
             >
               Deductible
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-faint text-sm">
                 $
               </span>
               <input
@@ -131,17 +131,17 @@ export const FinancialSummaryCard: React.FC<FinancialSummaryCardProps> = ({
                 className={INPUT_CLASS}
               />
             </div>
-            <p className="mt-1.5 text-[11px] text-slate-500">Collected from the property owner</p>
+            <p className="mt-1.5 text-[11px] text-muted">Collected from the property owner</p>
           </div>
         </div>
 
         <div className="lg:col-span-5">
-          <div className="h-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3.5 flex flex-col justify-center">
-            <p className="text-[12px] font-medium text-slate-600">Net claim value</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums leading-none">
+          <div className="h-full rounded-lg border border-line bg-canvas px-4 py-3.5 flex flex-col justify-center">
+            <p className="text-[12px] font-medium text-secondary">Net claim value</p>
+            <p className="mt-1 text-2xl font-semibold text-primary tabular-nums leading-none">
               {formatCurrency(financials.netClaimValue)}
             </p>
-            <p className="mt-2 text-[11px] text-slate-500">
+            <p className="mt-2 text-[11px] text-muted">
               Total RCV minus the deductible — the insurer&rsquo;s responsibility.
             </p>
           </div>
@@ -149,13 +149,13 @@ export const FinancialSummaryCard: React.FC<FinancialSummaryCardProps> = ({
       </div>
 
       {/* Payment schedule */}
-      <div className="px-3 sm:px-5 py-4 border-t border-slate-100">
+      <div className="px-3 sm:px-5 py-4 border-t border-line-soft">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-[13px] font-semibold text-slate-900">Payment schedule</h3>
-          <span className="text-[11px] text-slate-500">Split of the approved RCV</span>
+          <h3 className="text-[13px] font-semibold text-primary">Payment schedule</h3>
+          <span className="text-[11px] text-muted">Split of the approved RCV</span>
         </div>
 
-        <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+        <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-subtle">
           {schedule.map((item) => (
             <div
               key={item.label}
@@ -170,15 +170,15 @@ export const FinancialSummaryCard: React.FC<FinancialSummaryCardProps> = ({
           {schedule.map((item) => (
             <div key={item.label}>
               <dt className="flex items-center justify-between gap-2">
-                <span className="text-[12px] font-medium text-slate-600">{item.label}</span>
-                <span className="text-[11px] font-semibold text-slate-400 tabular-nums">
+                <span className="text-[12px] font-medium text-secondary">{item.label}</span>
+                <span className="text-[11px] font-semibold text-faint tabular-nums">
                   {item.share}
                 </span>
               </dt>
-              <dd className="mt-1 text-[15px] font-semibold text-slate-900 tabular-nums">
+              <dd className="mt-1 text-[15px] font-semibold text-primary tabular-nums">
                 {formatCurrency(item.amount)}
               </dd>
-              <dd className="mt-0.5 text-[11px] text-slate-500">{item.note}</dd>
+              <dd className="mt-0.5 text-[11px] text-muted">{item.note}</dd>
             </div>
           ))}
         </dl>

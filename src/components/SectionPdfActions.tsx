@@ -41,16 +41,16 @@ export const SectionPdfActions: React.FC<SectionPdfActionsProps> = ({
   };
 
   return (
-    <div className={`mt-5 pt-4 border-t border-slate-100 ${className ?? ''}`}>
+    <div className={`mt-5 pt-4 border-t border-line-soft ${className ?? ''}`}>
       <div className="flex flex-col gap-2.5">
         {docs.map((doc) => {
           const isDownloading = downloadingId === doc.id;
           return (
             <div key={doc.id} className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between gap-3">
-              <span className="inline-flex min-w-0 items-center gap-2 text-[12px] text-slate-500">
-                <FileText className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                <span className="truncate font-medium text-slate-600">{doc.label}</span>
-                <span className="shrink-0 rounded border border-red-200/80 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600">
+              <span className="inline-flex min-w-0 items-center gap-2 text-[12px] text-muted">
+                <FileText className="w-3.5 h-3.5 shrink-0 text-faint" />
+                <span className="truncate font-medium text-secondary">{doc.label}</span>
+                <span className="shrink-0 rounded border border-brand-line/80 bg-brand-tint px-1.5 py-0.5 text-[10px] font-bold text-brand-copy">
                   {doc.code}
                 </span>
               </span>
@@ -60,9 +60,9 @@ export const SectionPdfActions: React.FC<SectionPdfActionsProps> = ({
                   onClick={() => onPreview(doc)}
                   title={`Preview ${doc.title} PDF`}
                   aria-label={`Preview ${doc.title} PDF`}
-                  className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 transition hover:bg-slate-50"
+                  className="inline-flex items-center rounded-lg border border-line bg-surface px-3 py-1.5 text-[12px] font-semibold text-body transition hover:bg-canvas"
                 >
-                  <Eye className="mr-1.5 w-3.5 h-3.5 text-slate-500" />
+                  <Eye className="mr-1.5 w-3.5 h-3.5 text-muted" />
                   Preview
                 </button>
                 <button

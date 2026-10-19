@@ -79,11 +79,11 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
   return (
     <div className={`fixed inset-x-4 ${hasBottomNavigation ? 'bottom-[calc(5rem+env(safe-area-inset-bottom))]' : 'bottom-[calc(1rem+env(safe-area-inset-bottom))]'} sm:inset-x-auto sm:right-5 sm:bottom-5 sm:max-w-sm z-50 flex flex-col items-stretch sm:items-end gap-2`}>
       {updateReady && (
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-lg flex items-start gap-3">
-          <RotateCw className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+        <div className="rounded-xl border border-line bg-surface px-4 py-3 shadow-lg flex items-start gap-3">
+          <RotateCw className="w-4 h-4 text-brand-copy mt-0.5 shrink-0" />
           <div>
-            <p className="text-[13px] font-semibold text-slate-900">A new version is ready</p>
-            <p className="text-[12px] text-slate-500 mt-0.5 leading-snug">
+            <p className="text-[13px] font-semibold text-primary">A new version is ready</p>
+            <p className="text-[12px] text-muted mt-0.5 leading-snug">
               Reload to get the latest updates.
             </p>
             <button
@@ -98,16 +98,16 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
       )}
 
       {sync.conflictNotice && (
-        <div className="w-full rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-lg flex items-start gap-3">
-          <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-          <p className="text-[12px] font-medium text-amber-900 leading-snug flex-1">
+        <div className="w-full rounded-xl border border-warning-line bg-warning-tint px-4 py-3 shadow-lg flex items-start gap-3">
+          <AlertTriangle className="w-4 h-4 text-warning-copy mt-0.5 shrink-0" />
+          <p className="text-[12px] font-medium text-warning-copy-strong leading-snug flex-1">
             {sync.conflictNotice}
           </p>
           <button
             type="button"
             onClick={clearConflictNotice}
             title="Dismiss"
-            className="text-amber-700 hover:text-amber-900 transition-colors shrink-0"
+            className="text-warning-copy hover:text-warning-copy-strong transition-colors shrink-0"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -115,10 +115,10 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
       )}
 
       {showSyncCard && (
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-lg flex items-start gap-3">
+        <div className="rounded-xl border border-line bg-surface px-4 py-3 shadow-lg flex items-start gap-3">
           {sync.online ? (
             sync.syncing ? (
-              <Loader2 className="w-4 h-4 animate-spin text-slate-400 mt-0.5 shrink-0" />
+              <Loader2 className="w-4 h-4 animate-spin text-faint mt-0.5 shrink-0" />
             ) : (
               <RefreshCw className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
             )
@@ -126,7 +126,7 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
             <WifiOff className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
           )}
           <div className="min-w-0">
-            <p className="text-[13px] font-semibold text-slate-900">
+            <p className="text-[13px] font-semibold text-primary">
               {sync.online
                 ? sync.pendingCount > 0
                   ? sync.syncing
@@ -135,7 +135,7 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
                   : sync.lastError ? 'Saving needs attention' : `${strandedLabel} waiting to sync`
                 : 'Offline — working from saved copies'}
             </p>
-            <p className="text-[12px] text-slate-500 mt-0.5 leading-snug">
+            <p className="text-[12px] text-muted mt-0.5 leading-snug">
               {sync.errorCode === 'device_storage' ? 'The latest changes could not be saved. Keep this window open and try saving again.' : sync.online
                 ? sync.pendingCount > 0
                   ? sync.lastError
@@ -153,7 +153,7 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
               <button
                 type="button"
                 onClick={() => void syncNow()}
-                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border border-line text-body hover:bg-canvas transition-colors"
               >
                 Sync now
               </button>
@@ -163,11 +163,11 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
       )}
 
       {showInstall && (
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-lg flex items-start gap-3">
-          <Download className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+        <div className="rounded-xl border border-line bg-surface px-4 py-3 shadow-lg flex items-start gap-3">
+          <Download className="w-4 h-4 text-brand-copy mt-0.5 shrink-0" />
           <div className="min-w-0">
-            <p className="text-[13px] font-semibold text-slate-900">Install Hays + Sons</p>
-            <p className="text-[12px] text-slate-500 mt-0.5 leading-snug">
+            <p className="text-[13px] font-semibold text-primary">Install Hays + Sons</p>
+            <p className="text-[12px] text-muted mt-0.5 leading-snug">
               Add it to this computer — opens in its own window and works offline.
             </p>
             <div className="mt-2 flex items-center gap-2">
@@ -181,7 +181,7 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
               <button
                 type="button"
                 onClick={() => setDismissedInstall(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-line text-body hover:bg-canvas transition-colors"
               >
                 Not now
               </button>

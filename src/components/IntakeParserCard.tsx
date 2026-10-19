@@ -222,13 +222,13 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
   const provenanceBadge = (type: FieldProvenanceType) => {
     switch (type) {
       case 'EXTRACTED':
-        return <span className="bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded text-[10px]">EXTRACTED</span>;
+        return <span className="bg-info-soft text-info-copy font-bold px-1.5 py-0.5 rounded text-[10px]">EXTRACTED</span>;
       case 'CALCULATED':
-        return <span className="bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded text-[10px]">CALCULATED</span>;
+        return <span className="bg-success-soft text-success-copy font-bold px-1.5 py-0.5 rounded text-[10px]">CALCULATED</span>;
       case 'FOUND':
         return <span className="bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded text-[10px]">FOUND</span>;
       case 'DRAFTED':
-        return <span className="bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded text-[10px]">DRAFTED</span>;
+        return <span className="bg-warning-soft text-warning-copy font-bold px-1.5 py-0.5 rounded text-[10px]">DRAFTED</span>;
       case 'UNRESOLVED':
         return <span className="bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded text-[10px]">UNRESOLVED</span>;
     }
@@ -258,14 +258,14 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
   if (!isExpanded) {
     if (!hasIntakeContent) return null;
     return (
-      <div className="mb-5 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-5 flex flex-col gap-3 rounded-xl border border-line bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="rounded-lg bg-slate-100 p-2 text-slate-600">
+          <div className="rounded-lg bg-subtle p-2 text-secondary">
             <StatusIcon className={`h-5 w-5 ${isBusy ? 'animate-spin' : ''}`} aria-hidden="true" />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-slate-900">{uploadedFileInfo?.name || 'Pasted intake'}</p>
-            <p className="text-xs text-slate-600" role="status" aria-live="polite">
+            <p className="truncate text-sm font-semibold text-primary">{uploadedFileInfo?.name || 'Pasted intake'}</p>
+            <p className="text-xs text-secondary" role="status" aria-live="polite">
               {intakeStatus}
               {lastParseResult && !isBusy && !hasUnanalyzedText && (
                 <> · {lastParseResult.fieldsCount} fields extracted</>
@@ -273,7 +273,7 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
             </p>
           </div>
         </div>
-        <button type="button" onClick={onExpand} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
+        <button type="button" onClick={onExpand} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-line px-3 text-sm font-semibold text-body transition hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
           Review intake <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
@@ -281,14 +281,14 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
   }
 
   return (
-    <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6" aria-label="Job intake">
-      <div className="flex items-start gap-3 border-b border-slate-100 pb-5">
-        <div className="rounded-xl bg-red-50 p-2.5 text-red-600">
+    <section className="mb-6 rounded-2xl border border-line bg-surface p-4 sm:p-6" aria-label="Job intake">
+      <div className="flex items-start gap-3 border-b border-line-soft pb-5">
+        <div className="rounded-xl bg-brand-tint p-2.5 text-brand-copy">
           <Sparkles className="h-5 w-5" aria-hidden="true" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-slate-900">Bring in your job information</h3>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
+          <h3 className="text-lg font-semibold text-primary">Bring in your job information</h3>
+          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-secondary">
             Upload an intake file or paste DASH notes, carrier emails, and estimate details. Built-in extraction fills fields immediately while AI checks for more details.
           </p>
         </div>
@@ -298,14 +298,14 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`mt-5 rounded-xl border border-dashed p-4 transition sm:p-5 ${isDragging ? 'border-red-500 bg-red-50 ring-2 ring-red-500/20' : 'border-slate-300 bg-slate-50'}`}
+        className={`mt-5 rounded-xl border border-dashed p-4 transition sm:p-5 ${isDragging ? 'border-red-500 bg-brand-tint ring-2 ring-red-500/20' : 'border-line-strong bg-canvas'}`}
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <Upload className="h-5 w-5 shrink-0 text-slate-500" aria-hidden="true" />
+            <Upload className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
             <div>
-              <p className="text-sm font-semibold text-slate-800">Upload or drop an intake file</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-slate-500">PDF, text, JSON, CSV, or log files · Analyzed automatically</p>
+              <p className="text-sm font-semibold text-primary">Upload or drop an intake file</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-muted">PDF, text, JSON, CSV, or log files · Analyzed automatically</p>
             </div>
           </div>
           <button
@@ -330,13 +330,13 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
       </div>
 
       {uploadedFileInfo && (
-        <div className="mt-3 flex flex-col gap-2 rounded-lg border border-slate-200 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-3 flex flex-col gap-2 rounded-lg border border-line px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-2 text-sm">
-            <FileText className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
-            <span className="break-all font-medium text-slate-800">{uploadedFileInfo.name}</span>
-            <span className="shrink-0 text-xs text-slate-500">{uploadedFileInfo.sizeKb} KB</span>
+            <FileText className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+            <span className="break-all font-medium text-primary">{uploadedFileInfo.name}</span>
+            <span className="shrink-0 text-xs text-muted">{uploadedFileInfo.sizeKb} KB</span>
           </div>
-          <span className={`flex shrink-0 items-center gap-1.5 text-xs font-medium ${fileError ? 'text-amber-700' : isBusy || hasUnanalyzedText ? 'text-slate-600' : 'text-emerald-700'}`} role="status" aria-live="polite">
+          <span className={`flex shrink-0 items-center gap-1.5 text-xs font-medium ${fileError ? 'text-warning-copy' : isBusy || hasUnanalyzedText ? 'text-secondary' : 'text-success-copy'}`} role="status" aria-live="polite">
             <StatusIcon className={`h-4 w-4 ${isBusy ? 'animate-spin' : ''}`} aria-hidden="true" />
             {intakeStatus}
           </span>
@@ -344,15 +344,15 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
       )}
 
       {fileError && (
-        <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-relaxed text-amber-900" role="alert">
+        <p className="mt-3 flex items-start gap-2 rounded-lg border border-warning-line bg-warning-tint p-3 text-sm leading-relaxed text-warning-copy-strong" role="alert">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           {fileError}
         </p>
       )}
 
       <div className="mt-5">
-        <label htmlFor={intakeTextId} className="block text-sm font-semibold text-slate-800">Or paste intake notes</label>
-        <p id={intakeHelpId} className="mt-1 mb-2 text-xs leading-relaxed text-slate-500">Pasted notes are analyzed automatically. You can also type or edit the notes, then select Analyze intake.</p>
+        <label htmlFor={intakeTextId} className="block text-sm font-semibold text-primary">Or paste intake notes</label>
+        <p id={intakeHelpId} className="mt-1 mb-2 text-xs leading-relaxed text-muted">Pasted notes are analyzed automatically. You can also type or edit the notes, then select Analyze intake.</p>
         <textarea
           id={intakeTextId}
           aria-describedby={intakeHelpId}
@@ -365,10 +365,10 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
           }}
           onPaste={handlePaste}
           placeholder="Paste DASH intake notes, a carrier assignment email, or an Xactimate recap here…"
-          className="w-full rounded-xl border border-slate-300 bg-white p-3 text-sm leading-relaxed text-slate-800 transition placeholder:text-slate-400 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:bg-slate-50 disabled:text-slate-500"
+          className="w-full rounded-xl border border-line-strong bg-surface p-3 text-sm leading-relaxed text-primary transition placeholder:text-faint focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:bg-canvas disabled:text-muted"
         />
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="max-w-lg text-xs leading-relaxed text-slate-500">New information is merged into this job. Review the extracted values before creating your documents.</p>
+          <p className="max-w-lg text-xs leading-relaxed text-muted">New information is merged into this job. Review the extracted values before creating your documents.</p>
           <button
             type="button"
             onClick={() => handleParse(intakeText)}
@@ -381,7 +381,7 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
           </button>
         </div>
         {isBusy && (
-          <p className="mt-3 flex items-center gap-2 text-sm text-slate-600" role="status" aria-live="polite"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />{intakeStatus}… You can keep working in another section.</p>
+          <p className="mt-3 flex items-center gap-2 text-sm text-secondary" role="status" aria-live="polite"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />{intakeStatus}… You can keep working in another section.</p>
         )}
       </div>
 
@@ -393,66 +393,66 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
       />
 
       {lastParseResult && (
-        <div className="mt-6 border-t border-slate-200 pt-5">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <CheckCircle2 className="h-5 w-5 text-emerald-600" aria-hidden="true" />
+        <div className="mt-6 border-t border-line pt-5">
+          <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+            <CheckCircle2 className="h-5 w-5 text-success-copy" aria-hidden="true" />
             {hasUnanalyzedText ? 'Last intake analysis' : lastParseResult.updatedCount ? 'Job information updated' : 'Extraction ready to review'}
           </div>
           <div className="mt-3 grid grid-cols-2 gap-3">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <span className="block text-xl font-semibold text-slate-900">{lastParseResult.fieldsCount}</span>
-              <span className="text-xs text-slate-600">Fields extracted</span>
+            <div className="rounded-xl border border-line bg-canvas p-3">
+              <span className="block text-xl font-semibold text-primary">{lastParseResult.fieldsCount}</span>
+              <span className="text-xs text-secondary">Fields extracted</span>
             </div>
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-              <span className="block text-xl font-semibold text-emerald-800">{lastParseResult.updatedCount}</span>
-              <span className="text-xs text-emerald-700">Job values updated</span>
+            <div className="rounded-xl border border-success-line bg-success-tint p-3">
+              <span className="block text-xl font-semibold text-success-copy-strong">{lastParseResult.updatedCount}</span>
+              <span className="text-xs text-success-copy">Job values updated</span>
             </div>
           </div>
 
           {missingJobFields.length > 0 ? (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <p className="flex items-center gap-2 text-sm font-semibold text-amber-900"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />Required information to confirm</p>
-              <p className="mt-1 text-sm leading-relaxed text-amber-800">Add these details in Job Details before creating the production packet.</p>
+            <div className="mt-4 rounded-xl border border-warning-line bg-warning-tint p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold text-warning-copy-strong"><AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />Required information to confirm</p>
+              <p className="mt-1 text-sm leading-relaxed text-warning-copy-strong">Add these details in Job Details before creating the production packet.</p>
               <ul className="mt-3 flex flex-wrap gap-2">
-                {missingJobFields.map((field) => <li key={field.inputId} className="rounded-lg border border-amber-200 bg-white px-2.5 py-1 text-xs font-medium text-amber-900">{field.label}</li>)}
+                {missingJobFields.map((field) => <li key={field.inputId} className="rounded-lg border border-warning-line bg-surface px-2.5 py-1 text-xs font-medium text-warning-copy-strong">{field.label}</li>)}
               </ul>
             </div>
           ) : (
-            <p className="mt-4 text-sm text-emerald-700">Required intake fields are complete. Review the job details, then create your production packet.</p>
+            <p className="mt-4 text-sm text-success-copy">Required intake fields are complete. Review the job details, then create your production packet.</p>
           )}
 
-          <details className="group mt-4 rounded-xl border border-slate-200">
-            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
+          <details className="group mt-4 rounded-xl border border-line">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-body hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500">
               View extracted fields and analysis
               <ChevronDown className="h-4 w-4 shrink-0 transition group-open:rotate-180" aria-hidden="true" />
             </summary>
-            <div className="space-y-3 border-t border-slate-200 p-4">
-              <p className="text-xs text-slate-500">Built-in and AI extraction · {lastParseResult.source === 'file' ? 'Uploaded file' : lastParseResult.source === 'paste' ? 'Pasted notes' : 'Intake notes'}</p>
+            <div className="space-y-3 border-t border-line p-4">
+              <p className="text-xs text-muted">Built-in and AI extraction · {lastParseResult.source === 'file' ? 'Uploaded file' : lastParseResult.source === 'paste' ? 'Pasted notes' : 'Intake notes'}</p>
               {lastParseResult.aiNotes && (
-                <p className="rounded-lg bg-blue-50 p-3 text-sm leading-relaxed text-blue-900">{lastParseResult.aiNotes}</p>
+                <p className="rounded-lg bg-info-tint p-3 text-sm leading-relaxed text-info-copy-strong">{lastParseResult.aiNotes}</p>
               )}
               {lastParseResult.sections.map((section) => (
-                <div key={section.section} className="rounded-lg border border-slate-200 p-3">
+                <div key={section.section} className="rounded-lg border border-line p-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold text-slate-800">{section.label}</span>
-                    <span className="text-xs text-slate-500">{section.fields.length} field{section.fields.length === 1 ? '' : 's'}</span>
+                    <span className="text-sm font-semibold text-primary">{section.label}</span>
+                    <span className="text-xs text-muted">{section.fields.length} field{section.fields.length === 1 ? '' : 's'}</span>
                   </div>
                   <dl className="space-y-2">
                     {section.fields.map((field) => (
-                      <div key={field.key} className={`rounded-lg px-3 py-2 text-xs ${field.changed ? 'bg-emerald-50' : 'bg-slate-50'}`}>
-                        <dt className="flex flex-wrap items-center gap-2 font-semibold text-slate-700">{field.label}{provenanceBadge(field.source)}</dt>
-                        <dd className="mt-1 break-words leading-relaxed text-slate-600">{field.value}</dd>
+                      <div key={field.key} className={`rounded-lg px-3 py-2 text-xs ${field.changed ? 'bg-success-tint' : 'bg-canvas'}`}>
+                        <dt className="flex flex-wrap items-center gap-2 font-semibold text-body">{field.label}{provenanceBadge(field.source)}</dt>
+                        <dd className="mt-1 break-words leading-relaxed text-secondary">{field.value}</dd>
                       </div>
                     ))}
                   </dl>
                 </div>
               ))}
               {lastParseResult.warnings.length > 0 && (
-                <div className="space-y-2 rounded-lg bg-orange-50 p-3">
-                  {lastParseResult.warnings.map((warning, index) => <p key={index} className="flex items-start gap-2 text-xs leading-relaxed text-orange-900"><Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{warning}</p>)}
+                <div className="space-y-2 rounded-lg bg-attention-tint p-3">
+                  {lastParseResult.warnings.map((warning, index) => <p key={index} className="flex items-start gap-2 text-xs leading-relaxed text-attention-copy"><Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{warning}</p>)}
                 </div>
               )}
-              <p className="border-t border-slate-100 pt-3 text-xs leading-relaxed text-slate-500">Extracted: found in the intake. Calculated: computed from provided values. Found: a branch default. Drafted: suggested text to review.</p>
+              <p className="border-t border-line-soft pt-3 text-xs leading-relaxed text-muted">Extracted: found in the intake. Calculated: computed from provided values. Found: a branch default. Drafted: suggested text to review.</p>
             </div>
           </details>
         </div>

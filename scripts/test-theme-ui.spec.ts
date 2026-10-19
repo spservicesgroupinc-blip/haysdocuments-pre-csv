@@ -88,5 +88,5 @@ test('signed-out users can change appearance even if preference storage is unava
   await expect(appearance).toBeVisible({ timeout: 1000 });
   await appearance.getByRole('button', { name: 'Dark', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.locator('#signin-email')).toBeVisible();
+  await expect(page.locator('#login-email')).toBeVisible();
 });

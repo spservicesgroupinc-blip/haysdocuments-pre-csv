@@ -835,8 +835,8 @@ export default function App() {
   // Auth gate — the workspace is only reachable once signed in (or in developer mode).
   if (!isAuthReady) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
+      <div className="min-h-screen bg-canvas flex items-center justify-center">
+        <Loader2 className="w-5 h-5 animate-spin text-faint" />
       </div>
     );
   }
@@ -855,14 +855,14 @@ export default function App() {
   }
 
   if (!workspaceReady) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center gap-2 text-sm text-slate-500" role="status">
+    <div className="min-h-screen bg-canvas flex items-center justify-center gap-2 text-sm text-muted" role="status">
       <Loader2 className="w-5 h-5 animate-spin" /> Restoring your workspace…
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0">
-      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-3 focus:text-red-700 focus:shadow-lg">Skip to workspace</a>
+    <div className="min-h-screen bg-canvas text-primary font-sans flex flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0">
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-2 focus:z-50 focus:rounded-lg focus:bg-surface focus:px-4 focus:py-3 focus:text-brand-copy-strong focus:shadow-lg">Skip to workspace</a>
       {/* Top Navbar */}
       <Navbar
         isHome={activeTab === 'home'}
@@ -889,7 +889,7 @@ export default function App() {
       {/* Status toast */}
       {statusNotification && (
         <div className="fixed top-[calc(5rem+env(safe-area-inset-top))] inset-x-4 sm:inset-x-auto sm:right-5 z-50 animate-in slide-in-from-top-2 duration-200">
-          <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-lg w-full sm:w-auto sm:max-w-sm">
+          <div className="flex items-start gap-3 rounded-xl border border-line bg-surface px-4 py-3 shadow-lg w-full sm:w-auto sm:max-w-sm">
             <span
               className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
                 statusNotification.type === 'success'
@@ -899,7 +899,7 @@ export default function App() {
                   : 'bg-slate-400'
               }`}
             />
-            <p className="text-[13px] font-medium text-slate-800 leading-snug">
+            <p className="text-[13px] font-medium text-primary leading-snug">
               {statusNotification.message}
             </p>
           </div>
@@ -916,8 +916,8 @@ export default function App() {
         />
         {activeTab !== 'home' && (
           <div className="mb-4 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm lg:hidden" aria-label="Current job">
-            <span className="font-semibold text-slate-900">{jobData.customer.customerName || 'New job'}</span>
-            <span className="text-slate-500">· {jobData.customer.jobNumber}</span>
+            <span className="font-semibold text-primary">{jobData.customer.customerName || 'New job'}</span>
+            <span className="text-muted">· {jobData.customer.jobNumber}</span>
           </div>
         )}
         <div className="flex items-start gap-6">
@@ -1066,15 +1066,15 @@ export default function App() {
             )}
 
             {activeTab !== 'home' && (
-              <nav className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4" aria-label="Job section actions">
+              <nav className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4" aria-label="Job section actions">
                 {previousSection ? (
-                  <button type="button" onClick={() => handleNavigate(previousSection.id)} className="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white hover:text-slate-900">
+                  <button type="button" onClick={() => handleNavigate(previousSection.id)} className="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-secondary hover:bg-surface hover:text-primary">
                     <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                     {previousSection.label}
                   </button>
-                ) : <span className="text-sm text-slate-500">Upload an intake or enter the job details manually.</span>}
+                ) : <span className="text-sm text-muted">Upload an intake or enter the job details manually.</span>}
                 {nextSection && (
-                  <button type="button" onClick={() => handleNavigate(nextSection.id)} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 hover:border-slate-400 hover:bg-slate-50">
+                  <button type="button" onClick={() => handleNavigate(nextSection.id)} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-primary hover:border-line-emphasis hover:bg-canvas">
                     Next: {nextSection.label}
                     <ArrowRight className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -1086,9 +1086,9 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 mt-auto">
-        <div className="max-w-[1400px] mx-auto px-3 sm:px-5 py-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left text-[12px] text-slate-500">
-          <p className="font-medium text-slate-600">
+      <footer className="border-t border-line mt-auto">
+        <div className="max-w-[1400px] mx-auto px-3 sm:px-5 py-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-center sm:text-left text-[12px] text-muted">
+          <p className="font-medium text-secondary">
             Hays &amp; Sons Complete Restoration — Fort Wayne Division
           </p>
           <p className="tabular-nums">909 Production Road, Fort Wayne, IN 46808 · 1-260-471-9110</p>

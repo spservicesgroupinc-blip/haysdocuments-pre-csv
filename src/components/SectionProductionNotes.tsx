@@ -55,14 +55,14 @@ export const SectionProductionNotes: React.FC<SectionProductionNotesProps> = ({
   onChange,
 }) => {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-3 sm:p-5">
-      <div className="flex items-center gap-3 mb-5 pb-4 border-b border-slate-100">
-        <div className="p-2 rounded-lg bg-slate-100 text-slate-500">
+    <div className="bg-surface rounded-xl border border-line p-3 sm:p-5">
+      <div className="flex items-center gap-3 mb-5 pb-4 border-b border-line-soft">
+        <div className="p-2 rounded-lg bg-subtle text-muted">
           <StickyNote className="w-4 h-4" />
         </div>
         <div>
-          <h3 className="text-[15px] font-semibold text-slate-900">Production Notes</h3>
-          <p className="text-xs text-slate-500">
+          <h3 className="text-[15px] font-semibold text-primary">Production Notes</h3>
+          <p className="text-xs text-muted">
             Loss and damage details are filled in automatically; add any extra production information below
           </p>
         </div>
@@ -71,7 +71,7 @@ export const SectionProductionNotes: React.FC<SectionProductionNotesProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {FIELDS.map((field) => (
           <div key={field.key} className={field.key === 'scopeSummary' || field.key === 'additionalNotes' ? 'md:col-span-2' : ''}>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label className="block text-xs font-semibold text-body mb-1">
               {field.label}
             </label>
             <textarea
@@ -79,7 +79,7 @@ export const SectionProductionNotes: React.FC<SectionProductionNotesProps> = ({
               value={productionNotes[field.key]}
               onChange={(e) => onChange(field.key, e.target.value)}
               placeholder={field.placeholder}
-              className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-300 rounded-lg text-slate-900 focus:bg-white focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition resize-y"
+              className="w-full px-3 py-2 text-sm bg-canvas border border-line-strong rounded-lg text-primary focus:bg-surface focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition resize-y"
             />
           </div>
         ))}

@@ -26,26 +26,26 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-4 sm:p-6 shadow-2xl border border-slate-200">
+      <div className="bg-surface rounded-2xl max-w-md w-full max-h-[90dvh] overflow-y-auto p-4 sm:p-6 shadow-2xl border border-line">
         <div className="flex items-start space-x-3">
           <div
             className={`p-2 rounded-xl shrink-0 ${
-              isDanger ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'
+              isDanger ? 'bg-brand-tint text-brand-copy' : 'bg-info-tint text-info-copy'
             }`}
           >
             <AlertTriangle className="w-5 h-5" />
           </div>
           <div className="flex-1">
-            <h3 className="text-base font-bold text-slate-900">{title}</h3>
-            <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">{message}</p>
+            <h3 className="text-base font-bold text-primary">{title}</h3>
+            <p className="text-xs text-secondary mt-1.5 leading-relaxed">{message}</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+        <div className="flex flex-wrap items-center justify-end gap-2 mt-6 pt-4 border-t border-line-soft">
           <button
             type="button"
             onClick={onCancel}
-            className="px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition"
+            className="px-3.5 py-1.5 text-xs font-semibold text-body hover:bg-subtle rounded-lg transition"
           >
             {cancelLabel}
           </button>
