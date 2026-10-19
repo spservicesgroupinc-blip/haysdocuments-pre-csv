@@ -12,6 +12,7 @@ import {
   UserCircle,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
+import { ThemePicker } from './ThemePicker';
 
 interface NavbarProps {
   isHome: boolean;
@@ -213,6 +214,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     className="fixed inset-0 z-40 cursor-default"
                   />
                   <div id="account-panel" className="absolute right-0 top-12 z-50 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+                    <div className="border-b border-slate-100 px-3.5 py-3"><ThemePicker /></div>
                     {/* Connection status */}
                     <div className="px-3.5 py-3 border-b border-slate-100">
                       <div className="flex items-start gap-2.5">

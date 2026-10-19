@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { fetchRegistrationInfo, type RegistrationInfo } from '../services/appsScriptService';
 import { BrandLogo } from './BrandLogo';
+import { ThemePicker } from './ThemePicker';
 
 export interface RegisterFormValues {
   name: string;
@@ -188,6 +189,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   return (
     <div className="min-h-dvh bg-slate-50 flex flex-col items-center justify-center px-3 py-6 sm:px-5 sm:py-10">
       <div className="w-full max-w-[400px]">
+        <div className="mb-6 ml-auto w-56 max-w-full"><ThemePicker /></div>
         {/* Brand */}
         <div className="flex flex-col items-center mb-7">
           <BrandLogo size={38} className="justify-center" />

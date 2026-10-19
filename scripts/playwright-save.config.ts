@@ -6,7 +6,7 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: '.',
-  testMatch: 'test-save-ui.spec.ts',
+  testMatch: ['test-save-ui.spec.ts', 'test-theme-ui.spec.ts'],
   workers: 1,
   timeout: 20000,
   use: { baseURL, viewport: { width: 1440, height: 1000 } },

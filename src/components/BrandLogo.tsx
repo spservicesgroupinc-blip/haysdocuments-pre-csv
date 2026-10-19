@@ -55,9 +55,9 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   const inverted = tone === 'inverted';
 
   // The near-black plus needs to become white on dark surfaces; brand red holds.
-  const ink = inverted ? '#FFFFFF' : BRAND_INK;
-  const wordmarkColor = inverted ? '#FFFFFF' : BRAND_INK;
-  const sublabelColor = inverted ? '#94A3B8' : '#64748B';
+  const ink = inverted ? '#FFFFFF' : `var(--app-logo-ink, ${BRAND_INK})`;
+  const wordmarkColor = ink;
+  const sublabelColor = inverted ? '#94A3B8' : 'var(--app-muted, #64748B)';
 
   // Chosen so the default size (34) reproduces the long-standing 15px / 11px
   // header type scale.
