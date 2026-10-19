@@ -38,7 +38,7 @@ export interface WorkspaceSection {
 
 /** Order mirrors the intake-to-production workflow. */
 export const WORKSPACE_SECTIONS: WorkspaceSection[] = [
-  { id: 'home', label: 'Jobs', icon: Home, group: 'Workspace' },
+  { id: 'home', label: 'Home', icon: Home, group: 'Workspace' },
   { id: 'intake', label: 'Intake', icon: FileInput, group: 'Workspace' },
   { id: 'customer', label: 'Customer & Property', icon: UserCircle, group: 'Job details' },
   { id: 'insurance', label: 'Insurance & Claim', icon: ShieldAlert, group: 'Job details' },
@@ -58,6 +58,8 @@ interface NavItemProps {
   isActive: boolean;
   badge?: number;
   missingFieldCount?: number;
+  /** Hide the amber missing-field badge while no real job is in progress. */
+  showMissingWarnings?: boolean;
   onNavigate: (tab: WorkspaceTab) => void;
   variant: 'sidebar' | 'strip';
 }
@@ -67,6 +69,7 @@ const NavItem: React.FC<NavItemProps> = ({
   isActive,
   badge,
   missingFieldCount,
+  showMissingWarnings = true,
   onNavigate,
   variant,
 }) => {
@@ -87,7 +90,7 @@ const NavItem: React.FC<NavItemProps> = ({
           : 'bg-transparent border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900'
       }`}
     >
-      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-red-600' : 'text-slate-400'}`} aria-hidden />
+      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-red-600' : 'text-slate-500'}`} aria-hidden />
       <span className={variant === 'sidebar' ? 'min-w-0 flex-1 text-left leading-4' : ''}>{section.label}</span>
       {typeof badge === 'number' && badge > 0 && (
         <span
@@ -100,10 +103,10 @@ const NavItem: React.FC<NavItemProps> = ({
           {badge}
         </span>
       )}
-      {typeof missingFieldCount === 'number' && missingFieldCount > 0 && (
+      {showMissingWarnings && typeof missingFieldCount === 'number' && missingFieldCount > 0 && (
         <span
-          title={`${missingFieldCount} required fields missing`}
-          aria-label={`${missingFieldCount} required fields missing`}
+          title={`${missingFieldCount} required fields missing — opens this section at the first one`}
+          aria-label={`${missingFieldCount} required fields missing — opens this section at the first one`}
           className="ml-auto inline-flex shrink-0 items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-800 tabular-nums"
         >
           <AlertCircle className="h-3 w-3" aria-hidden />
@@ -122,6 +125,8 @@ interface SidebarProps {
   jobNumber: string;
   isDirty: boolean;
   missingFieldCounts?: Partial<Record<WorkspaceTab, number>>;
+  /** Hide missing-field badges while no real job is in progress. */
+  showMissingWarnings?: boolean;
 }
 
 /** Desktop side menu: one entry per section, plus the current record's context. */
@@ -133,6 +138,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   jobNumber,
   isDirty,
   missingFieldCounts,
+  showMissingWarnings = true,
 }) => {
   const hasCustomer = Boolean(customerName.trim());
 
@@ -156,6 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     isActive={activeTab === section.id}
                     badge={section.id === 'home' ? savedJobsCount : undefined}
                     missingFieldCount={missingFieldCounts?.[section.id]}
+                    showMissingWarnings={showMissingWarnings}
                     onNavigate={onNavigate}
                     variant="sidebar"
                   />
@@ -200,6 +207,8 @@ interface MobileSectionNavProps {
   onNavigate: (tab: WorkspaceTab) => void;
   savedJobsCount: number;
   missingFieldCounts?: Partial<Record<WorkspaceTab, number>>;
+  /** Hide missing-field badges while no real job is in progress. */
+  showMissingWarnings?: boolean;
 }
 
 /** Phones use a section picker; tablets keep a scrollable navigation strip. */
@@ -208,6 +217,7 @@ export const MobileSectionNav: React.FC<MobileSectionNavProps> = ({
   onNavigate,
   savedJobsCount,
   missingFieldCounts,
+  showMissingWarnings = true,
 }) => (
   <div className="lg:hidden mb-4 min-w-0">
     <label className="block sm:hidden text-xs font-semibold text-slate-600 mb-1.5" htmlFor="workspace-section">
@@ -223,7 +233,7 @@ export const MobileSectionNav: React.FC<MobileSectionNavProps> = ({
         <optgroup key={group} label={group}>
           {WORKSPACE_SECTIONS.filter((section) => section.group === group).map((section) => (
             <option key={section.id} value={section.id}>
-              {section.label}{section.id === 'home' && savedJobsCount > 0 ? ` (${savedJobsCount})` : ''}{(missingFieldCounts?.[section.id] ?? 0) > 0 ? ` — ${missingFieldCounts?.[section.id]} missing` : ''}
+              {section.label}{section.id === 'home' && savedJobsCount > 0 ? ` (${savedJobsCount})` : ''}{showMissingWarnings && (missingFieldCounts?.[section.id] ?? 0) > 0 ? ` — ${missingFieldCounts?.[section.id]} missing` : ''}
             </option>
           ))}
         </optgroup>
@@ -237,6 +247,7 @@ export const MobileSectionNav: React.FC<MobileSectionNavProps> = ({
           isActive={activeTab === section.id}
           badge={section.id === 'home' ? savedJobsCount : undefined}
           missingFieldCount={missingFieldCounts?.[section.id]}
+          showMissingWarnings={showMissingWarnings}
           onNavigate={onNavigate}
           variant="strip"
         />

@@ -29,6 +29,8 @@ interface NavbarProps {
   onSaveJob: () => void;
   /** Opens the saved jobs library. */
   onOpenSavedCustomers: () => void;
+  /** Returns to the home screen when the brand lockup is clicked. */
+  onGoHome: () => void;
   /** Signs the application user out of the database session. */
   onSignOut: () => void;
   /** Records queued locally that still need to reach the database. */
@@ -54,6 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   isDeveloperBypass,
   onSaveJob,
   onOpenSavedCustomers,
+  onGoHome,
   onSignOut,
   pendingSyncCount = 0,
   isOffline = false,
@@ -74,12 +77,20 @@ export const Navbar: React.FC<NavbarProps> = ({
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 pt-safe">
       <div className="max-w-[1400px] mx-auto px-3 sm:px-5">
         <div className="flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 lg:gap-4 min-h-16 py-2 lg:py-0">
-          {/* Brand */}
-          <BrandLogo
-            size={34}
-            sublabel="Restoration Document Suite"
-            sublabelClassName="hidden sm:block"
-          />
+          {/* Brand — the lockup is the way home */}
+          <button
+            type="button"
+            onClick={onGoHome}
+            title="Go to Home"
+            aria-label="Hays + Sons — go to Home"
+            className="group flex min-w-0 items-center rounded-lg -ml-2 px-2 py-1.5 text-left transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/60"
+          >
+            <BrandLogo
+              size={34}
+              sublabel="Restoration Document Suite"
+              sublabelClassName="hidden sm:block"
+            />
+          </button>
 
           {/* Job context */}
           <div className="hidden xl:flex items-center gap-2 min-w-0 rounded-lg border border-slate-200 bg-slate-50/80 px-3 h-9">
@@ -151,7 +162,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={onSaveJob}
               disabled={isSavingJob || !isDatabaseConfigured}
               title={saveTitle}
-              className={`${BTN_BASE} min-h-11 px-2.5 sm:px-3.5 bg-red-600 text-white hover:bg-red-700 shadow-sm`}
+              className={`${BTN_BASE} min-h-11 px-2.5 sm:px-3.5 bg-red-700 text-white hover:bg-red-800 shadow-sm`}
             >
               {isSavingJob ? (
                 <Loader2 className="w-4 h-4 animate-spin" aria-hidden />

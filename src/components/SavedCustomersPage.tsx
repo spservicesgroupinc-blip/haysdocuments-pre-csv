@@ -112,7 +112,7 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
           </div>
           <div className="min-w-0">
             <h2 className="text-lg font-semibold text-slate-900 tracking-tight">
-              Jobs
+              Job library
             </h2>
             <p className="mt-0.5 text-sm text-slate-500 break-words">
               {isDatabaseConfigured
@@ -123,23 +123,11 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
             </p>
           </div>
         </div>
-        <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-          <span className="text-sm text-slate-500">
-            {isDatabaseConfigured
-              ? `${jobs.length} saved job${jobs.length === 1 ? '' : 's'}`
-              : 'Not connected'}
-          </span>
-          {onNewJob && (
-            <button
-              type="button"
-              onClick={onNewJob}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
-            >
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              New job
-            </button>
-          )}
-        </div>
+        <span className="text-sm text-slate-500 shrink-0">
+          {isDatabaseConfigured
+            ? `${jobs.length} saved job${jobs.length === 1 ? '' : 's'}`
+            : 'Not connected'}
+        </span>
       </div>
 
       {/* Toolbar */}
@@ -252,7 +240,7 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
               <button
                 type="button"
                 onClick={onNewJob}
-                className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
+                className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2"
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
                 New job

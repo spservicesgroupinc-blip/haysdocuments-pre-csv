@@ -59,6 +59,7 @@ import { Navbar } from './components/Navbar';
 import { MobileSectionNav, Sidebar, WORKSPACE_SECTIONS } from './components/Sidebar';
 import type { WorkspaceTab } from './components/Sidebar';
 import { SavedCustomersPage } from './components/SavedCustomersPage';
+import { HomeScreen } from './components/HomeScreen';
 import { FinancialSummaryCard } from './components/FinancialSummaryCard';
 import { SectionCustomer } from './components/SectionCustomer';
 import { SectionInsurance } from './components/SectionInsurance';
@@ -310,7 +311,13 @@ export default function App() {
   /** Side-menu navigation. Returning home always refreshes the saved list. */
   const handleNavigate = (tab: WorkspaceTab) => {
     setActiveTab(tab);
-    if (tab === 'home') void handleRefreshJobs();
+    if (tab === 'home') {
+      void handleRefreshJobs();
+      return;
+    }
+    // Land on the first missing field so the menu badge always has a target.
+    const firstMissing = missingFields.find((field) => field.section === tab);
+    if (firstMissing) fieldToFocusRef.current = firstMissing.inputId;
   };
 
   const handleReviewField = (field: MissingJobField) => {
@@ -810,10 +817,16 @@ export default function App() {
     showStatus('success', `Master Job Record updated from intake (${who}) - all production documents refreshed.`);
   };
 
+  /** Required fields missing from the current workspace record. */
+  const missingFields = getMissingJobFields(jobData);
   const missingFieldCounts: Partial<Record<WorkspaceTab, number>> = {};
-  for (const field of getMissingJobFields(jobData)) {
+  for (const field of missingFields) {
     missingFieldCounts[field.section] = (missingFieldCounts[field.section] ?? 0) + 1;
   }
+  /** True once the workspace holds a real job (not the untouched blank form). */
+  const hasJobInProgress = Boolean(
+    jobData.customer.customerName.trim() || jobData.customer.lossAddress.trim() || recordId || isDirty
+  );
   const jobSections = WORKSPACE_SECTIONS.filter((section) => section.id !== 'home');
   const sectionIndex = jobSections.findIndex((section) => section.id === activeTab);
   const previousSection = sectionIndex > 0 ? jobSections[sectionIndex - 1] : undefined;
@@ -862,6 +875,7 @@ export default function App() {
         isDeveloperBypass={isDeveloperBypassEnabled()}
         onSaveJob={handleSaveJob}
         onOpenSavedCustomers={handleOpenSavedCustomers}
+        onGoHome={() => handleNavigate('home')}
         onSignOut={handleAppSignOut}
         pendingSyncCount={syncState.pendingCount}
         isOffline={!syncState.online}
@@ -903,6 +917,7 @@ export default function App() {
           onNavigate={handleNavigate}
           savedJobsCount={savedJobs.length}
           missingFieldCounts={missingFieldCounts}
+          showMissingWarnings={hasJobInProgress}
         />
 
         <div className="flex items-start gap-6">
@@ -915,36 +930,57 @@ export default function App() {
             jobNumber={jobData.customer.jobNumber}
             isDirty={isDirty}
             missingFieldCounts={missingFieldCounts}
+            showMissingWarnings={hasJobInProgress}
           />
 
           {/* Section workspace */}
           <div className="flex-1 min-w-0 space-y-4 sm:space-y-6">
             {/* Keep intake mounted across sections so navigation preserves pending analysis. */}
-            <IntakeParserCard
-              key={intakeSession}
-              onApplyIntake={handleApplyIntake}
-              currentJob={jobData}
-              currentProvenance={provenance}
-              isExpanded={activeTab === 'intake'}
-              onExpand={() => handleNavigate('intake')}
-            />
+            {activeTab !== 'home' && (
+              <IntakeParserCard
+                key={intakeSession}
+                onApplyIntake={handleApplyIntake}
+                currentJob={jobData}
+                currentProvenance={provenance}
+                isExpanded={activeTab === 'intake'}
+                onExpand={() => handleNavigate('intake')}
+              />
+            )}
 
             {activeTab === 'home' && (
-              <SavedCustomersPage
-                jobs={savedJobs}
-                isLoading={isLoadingJobs}
-                error={jobListError}
-                search={jobSearch}
-                currentRecordId={recordId}
-                isDatabaseConfigured={isDatabaseConfigured()}
-                databaseEmail={currentUser ? currentUser.email : null}
-                isDeveloperBypass={isDeveloperBypassEnabled()}
-                onSearchChange={setJobSearch}
-                onRefresh={handleRefreshJobs}
-                onOpenJob={handleLoadJob}
-                onDeleteJob={handleDeleteJob}
-                onNewJob={handleReset}
-              />
+              <>
+                <HomeScreen
+                  userName={currentUser ? currentUser.name : null}
+                  databaseEmail={currentUser ? currentUser.email : null}
+                  jobs={savedJobs}
+                  pendingSyncCount={syncState.pendingCount}
+                  isOffline={!syncState.online}
+                  customerName={jobData.customer.customerName}
+                  jobNumber={jobData.customer.jobNumber}
+                  lossAddress={jobData.customer.lossAddress}
+                  hasJobInProgress={hasJobInProgress}
+                  isDirty={isDirty}
+                  missingFields={missingFields}
+                  onNewJob={handleReset}
+                  onContinueJob={() => setActiveTab('customer')}
+                  onReviewField={handleReviewField}
+                />
+                <SavedCustomersPage
+                  jobs={savedJobs}
+                  isLoading={isLoadingJobs}
+                  error={jobListError}
+                  search={jobSearch}
+                  currentRecordId={recordId}
+                  isDatabaseConfigured={isDatabaseConfigured()}
+                  databaseEmail={currentUser ? currentUser.email : null}
+                  isDeveloperBypass={isDeveloperBypassEnabled()}
+                  onSearchChange={setJobSearch}
+                  onRefresh={handleRefreshJobs}
+                  onOpenJob={handleLoadJob}
+                  onDeleteJob={handleDeleteJob}
+                  onNewJob={handleReset}
+                />
+              </>
             )}
 
             {activeTab === 'customer' && (
