@@ -136,7 +136,8 @@ interface ChatMessage {
   content: string;
 }
 
-async function chatOnce(messages: ChatMessage[]): Promise<string> {
+async function chatOnce(messages: ChatMessage[], signal: AbortSignal): Promise<string> {
+  signal.throwIfAborted();
   const apiKey = getIntakeApiKey();
   if (!apiKey) {
     throw new DeepseekIntakeError(
@@ -144,9 +145,6 @@ async function chatOnce(messages: ChatMessage[]): Promise<string> {
       401
     );
   }
-
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
     const response = await fetch(DEEPSEEK_URL, {
@@ -163,7 +161,7 @@ async function chatOnce(messages: ChatMessage[]): Promise<string> {
         max_tokens: 6000,
         response_format: { type: 'json_object' },
       }),
-      signal: controller.signal,
+      signal,
     });
 
     if (!response.ok) {
@@ -187,6 +185,7 @@ async function chatOnce(messages: ChatMessage[]): Promise<string> {
     }
     return content;
   } catch (error) {
+    if (signal.aborted) throw signal.reason;
     if (error instanceof DeepseekIntakeError) throw error;
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new DeepseekIntakeError('DeepSeek analysis timed out - please try again.', 0);
@@ -195,23 +194,27 @@ async function chatOnce(messages: ChatMessage[]): Promise<string> {
       `Could not reach DeepSeek: ${error instanceof Error ? error.message : String(error)}`,
       0
     );
-  } finally {
-    window.clearTimeout(timeout);
   }
 }
 
-const delay = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+const delay = (ms: number, signal: AbortSignal) => new Promise<void>((resolve, reject) => {
+  signal.throwIfAborted();
+  const onAbort = () => { window.clearTimeout(timer); reject(signal.reason); };
+  const timer = window.setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+  signal.addEventListener('abort', onAbort, { once: true });
+});
 
 /** One retry for transient failures (network hiccups, 429, 5xx). */
-async function chatWithRetry(messages: ChatMessage[]): Promise<string> {
+async function chatWithRetry(messages: ChatMessage[], signal: AbortSignal): Promise<string> {
   try {
-    return await chatOnce(messages);
+    return await chatOnce(messages, signal);
   } catch (error) {
+    if (signal.aborted) throw signal.reason;
     const status = error instanceof DeepseekIntakeError ? (error.status ?? 0) : 0;
     const retryable = status === 0 || status === 429 || status >= 500;
     if (!retryable) throw error;
-    await delay(700);
-    return await chatOnce(messages);
+    await delay(700, signal);
+    return await chatOnce(messages, signal);
   }
 }
 
@@ -276,19 +279,30 @@ function sanitizeAiPayload(raw: Record<string, unknown>): AiIntakePayload {
  * Sends the raw intake text to DeepSeek and returns a structured extraction
  * of every Master Job Record field the AI could understand from the document.
  * Throws DeepseekIntakeError on auth/billing/network/JSON problems so the
- * caller can fall back to the built-in rules parser.
+ * caller can preserve the independent local extraction results.
  */
-export async function analyzeIntakeWithAi(rawText: string): Promise<AiIntakePayload> {
+export async function analyzeIntakeWithAi(rawText: string, signal?: AbortSignal): Promise<AiIntakePayload> {
   if (!rawText.trim()) {
     throw new DeepseekIntakeError('No intake text to analyze.', 0);
   }
-  const content = await chatWithRetry([
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'user', content: `INTAKE DOCUMENT:\n${rawText}` },
-  ]);
-  const parsed = parseJsonContent(content);
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new DeepseekIntakeError('DeepSeek returned an unexpected JSON structure.', 0);
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(signal?.reason);
+  if (signal?.aborted) onAbort();
+  else signal?.addEventListener('abort', onAbort, { once: true });
+  const timeout = window.setTimeout(() => controller.abort(new DeepseekIntakeError('DeepSeek analysis timed out after 60 seconds.', 0)), REQUEST_TIMEOUT_MS);
+  try {
+    const content = await chatWithRetry([
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: `INTAKE DOCUMENT:\n${rawText}` },
+    ], controller.signal);
+    controller.signal.throwIfAborted();
+    const parsed = parseJsonContent(content);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new DeepseekIntakeError('DeepSeek returned an unexpected JSON structure.', 0);
+    }
+    return sanitizeAiPayload(parsed as Record<string, unknown>);
+  } finally {
+    window.clearTimeout(timeout);
+    signal?.removeEventListener('abort', onAbort);
   }
-  return sanitizeAiPayload(parsed as Record<string, unknown>);
 }

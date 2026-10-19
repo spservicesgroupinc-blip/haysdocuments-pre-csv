@@ -243,6 +243,186 @@ test('missing document fields lead directly to inputs and readiness updates acro
   await expect(page.getByText('Required intake fields are complete.', { exact: false })).toBeVisible();
 });
 
+async function startIntakeTest(page: Page) {
+  await start(page, async (route, body) => {
+    if (body.action === 'getDraft') await ok(route, { draft: { job, recordId: job.recordId, updatedAt: '2026-10-06T12:00:00Z' } });
+    else if (body.action === 'saveDraft') await ok(route, { job: body.draft.job, updatedAt: new Date().toISOString() });
+    else if (body.action === 'saveJob') await ok(route, body.job);
+  });
+  await navigate(page, 'intake');
+}
+async function respondWithPayload(route: Route, fields: unknown) {
+  await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: JSON.stringify(fields) } }] }) });
+}
+
+test('local results are usable during AI, manual edits survive, and conflicts can be reviewed on a phone', async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.route('https://api.deepseek.com/chat/completions', async route => {
+    await held;
+    await respondWithPayload(route, { customer: { customerName: 'AI customer', email: 'ai@example.com' }, insurance: { claimNumber: 'AI-CLAIM' }, financials: { totalApprovedRcv: 20000, deductible: 500 } });
+  });
+  await startIntakeTest(page);
+  await page.locator('input[type=file]').setInputFiles({ name: 'both.txt', mimeType: 'text/plain', buffer: Buffer.from(intakeText) });
+  await expect(page.getByText(/Built-in extraction: Complete/)).toBeVisible();
+  await expect(page.getByText('AI extraction: Running', { exact: true })).toBeVisible();
+  await expect(page.getByText('Job information updated', { exact: true })).toBeVisible();
+  await expect(intakeInput(page)).toBeEnabled();
+  await navigate(page, 'customer');
+  await expect(page.locator('#customer-customerName')).toHaveValue('Uploaded customer');
+  await page.locator('#customer-customerName').fill('Manual correction');
+  await page.getByRole('button', { name: 'Save job', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save job', exact: true })).toBeEnabled();
+  release();
+  await page.getByRole('button', { name: 'Review intake', exact: true }).click();
+  await expect(page.getByText(/AI extraction: Complete/)).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Review Customer Name', exact: true })).toContainText('Manual correction');
+  await page.getByRole('button', { name: 'Keep current Customer Name', exact: true }).click();
+  await page.getByRole('button', { name: 'Use AI for Claim Number', exact: true }).click();
+  await page.setViewportSize({ width: 320, height: 844 });
+  await expect(page.getByRole('group', { name: 'Review Total Approved RCV', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/intake-conflict-phone.png', fullPage: true });
+  await page.getByRole('button', { name: 'Use AI for Total Approved RCV', exact: true }).click();
+  await navigate(page, 'customer');
+  await expect(page.locator('#customer-customerName')).toHaveValue('Manual correction');
+  await expect(page.locator('#customer-email')).toHaveValue('ai@example.com');
+  await navigate(page, 'insurance');
+  await expect(page.locator('#insurance-claimNumber')).toHaveValue('AI-CLAIM');
+  await navigate(page, 'financials');
+  await expect(page.locator('#rcv-input')).toHaveValue('20000');
+  await expect(page.locator('#deductible-input')).toHaveValue('500');
+  expect(errors).toEqual([]);
+});
+
+for (const failure of ['unauthorized', 'invalid JSON', 'empty fields'] as const) {
+  test(`AI ${failure} preserves local results and Retry AI runs only AI`, async ({ page }) => {
+    let calls = 0;
+    await page.route('https://api.deepseek.com/chat/completions', async route => {
+      calls++;
+      if (calls > 1) return respondWithPayload(route, { customer: { email: 'retry@example.com' } });
+      if (failure === 'unauthorized') await route.fulfill({ status: 401, body: '{}' });
+      else if (failure === 'invalid JSON') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: 'not JSON' } }] }) });
+      else await respondWithPayload(route, {});
+    });
+    await startIntakeTest(page);
+    await page.locator('input[type=file]').setInputFiles({ name: 'local.txt', mimeType: 'text/plain', buffer: Buffer.from(intakeText) });
+    await expect(page.getByRole('button', { name: 'Retry AI', exact: true })).toBeVisible();
+    await navigate(page, 'customer');
+    await page.locator('#customer-customerName').fill('Manual correction');
+    await page.getByRole('button', { name: 'Review intake', exact: true }).click();
+    await page.getByRole('button', { name: 'Retry AI', exact: true }).click();
+    await expect(page.getByText(/AI extraction: Complete/)).toBeVisible();
+    await navigate(page, 'customer');
+    await expect(page.locator('#customer-customerName')).toHaveValue('Manual correction');
+    await expect(page.locator('#customer-email')).toHaveValue('retry@example.com');
+    expect(calls).toBe(2);
+  });
+}
+
+test('a paste starts both methods and empty local extraction still permits AI-only success', async ({ page }) => {
+  await page.route('https://api.deepseek.com/chat/completions', route => respondWithPayload(route, { customer: { customerName: 'AI-only customer' } }));
+  await startIntakeTest(page);
+  // Chromium's insertFromPaste event follows the same input and paste handlers as a clipboard paste.
+  await intakeInput(page).evaluate((node: HTMLTextAreaElement) => {
+    const text = 'Here is an unstructured report.';
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text', text);
+    node.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData }));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(node, text);
+    node.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await expect(page.getByText('Built-in extraction: No usable fields', { exact: true })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Review Customer Name', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Use AI for Customer Name', exact: true }).click();
+  await navigate(page, 'customer');
+  await expect(page.locator('#customer-customerName')).toHaveValue('AI-only customer');
+});
+
+test('neither method finding fields leaves the job unchanged and retains input', async ({ page }) => {
+  await page.route('https://api.deepseek.com/chat/completions', route => respondWithPayload(route, {}));
+  await startIntakeTest(page);
+  await intakeInput(page).fill('???');
+  await page.getByRole('button', { name: 'Analyze intake', exact: true }).click();
+  await expect(page.getByText(/Neither method extracted usable fields/)).toBeVisible();
+  await expect(intakeInput(page)).toHaveValue('???');
+  await expect(page.getByText('Job information updated', { exact: true })).toHaveCount(0);
+  await navigate(page, 'customer');
+  await expect(page.locator('#customer-customerName')).toHaveValue('Recovered customer');
+});
+
+test('a new intake and a reset ignore older AI responses', async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let calls = 0;
+  await page.route('https://api.deepseek.com/chat/completions', async route => {
+    calls++;
+    await held;
+    await respondWithPayload(route, { customer: { email: 'stale@example.com' } });
+  });
+  await startIntakeTest(page);
+  await intakeInput(page).fill('Customer Name: First intake');
+  await page.getByRole('button', { name: 'Analyze intake', exact: true }).click();
+  await expect.poll(() => calls).toBe(1);
+  await intakeInput(page).fill('Customer Name: Second intake');
+  await page.getByRole('button', { name: 'Analyzing intake…', exact: true }).click();
+  await expect.poll(() => calls).toBe(2);
+  await navigate(page, 'customer');
+  await expect(page.locator('#customer-customerName')).toHaveValue('Second intake');
+  await navigate(page, 'intake');
+  await clearJob(page);
+  release();
+  await navigate(page, 'customer');
+  await expect(page.locator('#customer-customerName')).toHaveValue('');
+  await expect(page.locator('#customer-email')).toHaveValue('');
+});
+
+test('the 60 second AI deadline leaves local extraction usable', async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let calls = 0;
+  await page.route('https://api.deepseek.com/chat/completions', async route => { calls++; await held; await respondWithPayload(route, {}); });
+  await startIntakeTest(page);
+  await page.clock.install();
+  await intakeInput(page).fill(intakeText);
+  await page.getByRole('button', { name: 'Analyze intake', exact: true }).click();
+  await expect.poll(() => calls).toBe(1);
+  await page.clock.fastForward(60_001);
+  await expect(page.getByRole('button', { name: 'Retry AI', exact: true })).toBeVisible();
+  await expect(page.getByText(/timed out after 60 seconds/)).toBeVisible();
+  release();
+  await navigate(page, 'customer');
+  await expect(page.locator('#customer-customerName')).toHaveValue('Uploaded customer');
+  expect(calls).toBe(1);
+});
+
+test('a transient AI retry shares the original 60 second deadline', async ({ page }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let calls = 0;
+  await page.route('https://api.deepseek.com/chat/completions', async route => {
+    if (++calls === 1) return route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
+    await held;
+    await respondWithPayload(route, {});
+  });
+  await startIntakeTest(page);
+  await page.clock.install();
+  const failedResponse = page.waitForResponse(response => response.url().includes('api.deepseek.com') && response.status() === 503);
+  await intakeInput(page).fill(intakeText);
+  await page.getByRole('button', { name: 'Analyze intake', exact: true }).click();
+  await failedResponse;
+  await page.clock.runFor(701);
+  await expect.poll(() => calls).toBe(2);
+  await page.clock.fastForward(59_301);
+  await expect(page.getByRole('button', { name: 'Retry AI', exact: true })).toBeVisible();
+  release();
+  await navigate(page, 'customer');
+  await expect(page.locator('#customer-customerName')).toHaveValue('Uploaded customer');
+  expect(calls).toBe(2);
+});
+
 const libraryJobs = [
   { recordId: 'saved-1', customerName: 'Zulu customer', jobNumber: 'JOB-2', lossAddress: '2 Main Street', updatedAt: '2026-10-07T12:00:00Z' },
   { recordId: 'saved-2', customerName: 'Alpha customer', jobNumber: 'JOB-10', lossAddress: '10 Main Street', updatedAt: '2026-10-06T12:00:00Z' },

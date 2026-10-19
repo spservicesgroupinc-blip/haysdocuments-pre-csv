@@ -15,6 +15,6 @@ export default defineConfig({
     cwd: '..',
     url: baseURL,
     reuseExistingServer: false,
-    env: { VITE_APPS_SCRIPT_URL: 'https://script.google.com/macros/s/TEST/exec', VITE_DEV_SHARED_SECRET: '' },
+    env: { VITE_APPS_SCRIPT_URL: 'https://script.google.com/macros/s/TEST/exec', VITE_DEV_SHARED_SECRET: '', VITE_DEEPSEEK_API_KEY: 'ui-test-key' },
   },
 });

@@ -1,1 +1,0 @@
-export default { testDir: '../scripts', testMatch: 'test-save-ui.spec.ts', workers: 1, timeout: 20000, outputDir: '../test-results/ui', use: { baseURL: 'http://127.0.0.1:3000', viewport: { width: 1440, height: 1000 } } };

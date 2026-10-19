@@ -49,12 +49,25 @@ existing deployment**, keeping its `/exec` URL. `npm run apps:paste` and
 
 ## Commands
 
+Intake runs built-in extraction immediately and DeepSeek independently in the background.
+Either method can succeed when the other fails. Local results remain editable and saveable
+while AI runs; AI fills missing fields and offers differing values with **Keep current**
+and **Use AI** controls. Existing values and edits made during analysis are preserved for
+review. Accepting a financial value recalculates the payment figures.
+
+Each AI run has a 60-second total deadline, including its transient retry. **Retry AI**
+reuses the last analyzed text without rerunning local extraction. A newer intake, job
+switch, or reset cancels obsolete work. Review choices last for the current intake session;
+accepted values use the normal job save flow. Image-only PDFs still require selectable
+text or separately obtained OCR text.
+
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Dev server on http://localhost:3000 |
 | `npm run build` | Production build into `dist/` (web app + service worker + manifest) |
 | `npm run preview` | Serve the production build locally (use this to test PWA/offline behaviour) |
 | `npm run lint` | Type-check (`tsc --noEmit`) |
+| `npm run intake:test` | Independent extraction, merging, conflicts, cancellation, and deadline regressions |
 | `npm run database:test` | Save/sync/transport regressions, including real IndexedDB transactions |
 | `npm run apps:test:drafts` | Current backend draft/job write locks, round trips and session heartbeat checks |
 | `npm run save:ui:test` | Chromium tests for recovery, saving while editing and connection failures (run `npx playwright install chromium` once) |

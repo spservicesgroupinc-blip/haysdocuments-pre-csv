@@ -49,6 +49,8 @@ export interface ExtractedSectionSummary {
 }
 
 export interface IntakeParseResult {
+  /** Validated source values, separate from branch defaults and calculations. */
+  candidates?: IntakeFieldCandidate[];
   jobData: RestorationJobData;
   provenance: ProvenanceRecord;
   blockingMissingFields: string[];
@@ -60,6 +62,18 @@ export interface IntakeParseResult {
     /** Short narrative the AI wrote about the document and extraction quality. */
     aiNotes?: string;
   };
+}
+
+export interface IntakeFieldCandidate {
+  onlyIfEmpty?: boolean;
+  key: string;
+  label: string;
+  section: SectionKey;
+  path: string;
+  kind: FieldKind;
+  value: string | number | boolean;
+  display: string;
+  source: FieldProvenanceType;
 }
 
 /**
@@ -214,6 +228,7 @@ interface FieldDef {
 }
 
 interface EngineState {
+  candidates: IntakeFieldCandidate[];
   job: RestorationJobData;
   provenance: ProvenanceRecord;
   consumedLines: Set<number>;
@@ -1339,6 +1354,7 @@ function collectCandidates(def: FieldDef, lines: string[], state: EngineState): 
 function createEngineState(existingJob?: RestorationJobData): EngineState {
   const job = existingJob ? (JSON.parse(JSON.stringify(existingJob)) as RestorationJobData) : createEmptyJob();
   return {
+    candidates: [],
     job,
     provenance: {},
     consumedLines: new Set<number>(),
@@ -1379,9 +1395,23 @@ function summarize(
 
 function applyExtractedValue(state: EngineState, def: FieldDef, sanitized: SanitizedValue, detail: string): void {
   const before = getPathValue(state.job, def.path);
+  const mailingWasEmpty = !state.job.customer.mailingAddress;
   if (def.apply) def.apply(state.job, sanitized.value);
   else setPathValue(state.job, def.path, sanitized.value);
   const after = getPathValue(state.job, def.path);
+  state.candidates.push({ key: def.key, label: def.label, section: def.section, path: def.path,
+    kind: def.kind, value: after, display: sanitized.display, source: 'EXTRACTED' });
+  // Make dependent address/mortgage writes explicit so each can be merged safely.
+  const addDependent = (key: string, label: string, section: SectionKey, kind: FieldKind) => {
+    const value = getPathValue(state.job, `${section}.${key}`);
+    state.candidates.push({ key, label, section, path: `${section}.${key}`, kind, onlyIfEmpty: def.key === 'lossAddress',
+      value, display: String(value), source: 'EXTRACTED' });
+  };
+  if (def.key === 'mailingAddress' || (def.key === 'lossAddress' && mailingWasEmpty)) {
+    if (def.key === 'lossAddress') addDependent('mailingAddress', 'Mailing Address', 'customer', 'text');
+    if (splitAddress(String(sanitized.value))) addDependent('mailingCityStateZip', 'Mailing City/State/ZIP', 'customer', 'text');
+  }
+  if (def.key === 'mortgageCompany' || def.key === 'loanNumber') addDependent('hasMortgage', 'Has Mortgage', 'mortgage', 'boolean');
   state.provenance[def.key] = { source: 'EXTRACTED', detail };
   summarize(state, def, sanitized.display, 'EXTRACTED', JSON.stringify(before) !== JSON.stringify(after));
   state.extractedCount += 1;
@@ -1394,6 +1424,10 @@ function recordDerived(
   source: FieldProvenanceType,
   detail: string
 ): void {
+  if (source === 'EXTRACTED' || (source === 'DRAFTED' && def.section === 'productionNotes')) {
+    const path = `${def.section}.${def.key}`;
+    state.candidates.push({ ...def, path, kind: 'text', value: getPathValue(state.job, path), display, source });
+  }
   state.provenance[def.key] = { source, detail };
   summarize(state, def, display, source, true);
 }
@@ -1422,25 +1456,25 @@ function collectBlockingFields(job: RestorationJobData): string[] {
   return blocking;
 }
 
-function finishMissingDefaults(state: EngineState, hadExistingJob: boolean): void {
+function finishMissingDefaults(state: EngineState, hadExistingJob: boolean, recalculateFinancials = true, protectedDefaults = new Set<string>()): void {
   const { job } = state;
 
-  if (!job.customer.jobNumber) {
+  if (!job.customer.jobNumber && !protectedDefaults.has('customer.jobNumber')) {
     job.customer.jobNumber = `FW-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
     recordDerived(state, { key: 'jobNumber', label: 'Job Number', section: 'customer' }, job.customer.jobNumber, 'CALCULATED', 'Generated a new branch job number');
   }
 
-  if (!job.customer.jobName && job.customer.customerName) {
+  if (!job.customer.jobName && job.customer.customerName && !protectedDefaults.has('customer.jobName')) {
     job.customer.jobName = `${job.customer.customerName} Restoration`;
     recordDerived(state, { key: 'jobName', label: 'Job Name', section: 'customer' }, job.customer.jobName, 'DRAFTED', 'Derived from the customer name');
   }
 
-  if (!job.customer.mainPhone && job.customer.mobilePhone) {
+  if (!job.customer.mainPhone && job.customer.mobilePhone && !protectedDefaults.has('customer.mainPhone')) {
     job.customer.mainPhone = job.customer.mobilePhone;
     recordDerived(state, { key: 'mainPhone', label: 'Main Phone', section: 'customer' }, job.customer.mainPhone, 'FOUND', 'Only phone number provided - used as main contact');
   }
 
-  if (typeof job.financials.totalApprovedRcv === 'number') {
+  if (recalculateFinancials && typeof job.financials.totalApprovedRcv === 'number') {
     const rcv = job.financials.totalApprovedRcv;
     const deductible = typeof job.financials.deductible === 'number' ? job.financials.deductible : 0;
     job.financials.netClaimValue = Math.max(0, Math.round((rcv - deductible) * 100) / 100);
@@ -1458,7 +1492,7 @@ function finishMissingDefaults(state: EngineState, hadExistingJob: boolean): voi
     state.provenance['balancePayment'] = { source: 'CALCULATED', detail: 'Formula: 25% Remaining Balance' };
   }
 
-  if (!job.insurance.lossDescription && job.customer.customerName) {
+  if (!job.insurance.lossDescription && job.customer.customerName && !protectedDefaults.has('insurance.lossDescription')) {
     job.insurance.lossDescription = `Restoration and reconstruction services required following ${job.insurance.typeOfLoss} at ${job.customer.lossAddress || 'property location'}.`;
     recordDerived(state, { key: 'lossDescription', label: 'Loss Description', section: 'insurance' }, job.insurance.lossDescription, 'DRAFTED', 'Factual summary derived from the loss peril');
   }
@@ -1522,6 +1556,7 @@ export function parseRawIntakeText(rawText: string, existingJob?: RestorationJob
   finishMissingDefaults(state, Boolean(existingJob));
 
   return {
+    candidates: state.candidates,
     jobData: state.job,
     provenance: state.provenance,
     blockingMissingFields: collectBlockingFields(state.job),
@@ -1561,6 +1596,7 @@ function coerceAiNumber(raw: unknown): number | null {
 /** Sanitizes one AI-provided value against the field definition's rules. */
 function sanitizeAiValue(def: FieldDef, raw: unknown): SanitizedValue | null {
   if (raw === undefined || raw === null) return null;
+  if (!['string', 'number', 'boolean'].includes(typeof raw)) return null;
 
   switch (def.kind) {
     case 'text': {
@@ -1700,6 +1736,7 @@ export function applyAiExtractionToJob(
   for (const key of Object.keys(AI_PROD_NOTE_LABELS) as Array<keyof ProductionNotesData>) {
     const rawValue = payload.productionNotes[key];
     if (rawValue === undefined || rawValue === null) continue;
+    if (typeof rawValue !== 'string') continue;
     const value = String(rawValue).replace(/\u00a0/g, ' ').trim().slice(0, 600);
     if (!value) continue;
     if ((state.job.productionNotes[key] || '').trim()) continue;
@@ -1714,7 +1751,7 @@ export function applyAiExtractionToJob(
   }
 
   // Mailing city/state/ZIP - split out by the AI from the address block.
-  const cityZip = String(payload.customer.mailingCityStateZip ?? '').trim();
+  const cityZip = typeof payload.customer.mailingCityStateZip === 'string' ? payload.customer.mailingCityStateZip.trim() : '';
   if (cityZip && cityZip !== state.job.customer.mailingCityStateZip) {
     state.job.customer.mailingCityStateZip = cityZip.slice(0, 100);
     recordDerived(
@@ -1728,7 +1765,7 @@ export function applyAiExtractionToJob(
 
   // Spouse last-4 SSN - tracked on the record but not exposed as a labelled field.
   const spouseRaw = payload.mortgage.spouseLast4Ssn;
-  if (spouseRaw !== undefined && spouseRaw !== null) {
+  if (typeof spouseRaw === 'string' || typeof spouseRaw === 'number') {
     const digits = String(spouseRaw).replace(/\D/g, '');
     if (digits.length >= 4 && !state.job.mortgage.spouseLast4Ssn) {
       state.job.mortgage.spouseLast4Ssn = digits.slice(-4);
@@ -1751,6 +1788,7 @@ export function applyAiExtractionToJob(
   finishMissingDefaults(state, Boolean(existingJob));
 
   return {
+    candidates: state.candidates,
     jobData: state.job,
     provenance: state.provenance,
     blockingMissingFields: collectBlockingFields(state.job),
@@ -1764,6 +1802,46 @@ export function applyAiExtractionToJob(
       aiNotes: (payload.analysisNotes || '').trim() || undefined,
     },
   };
+}
+
+/** Compare validated values using the same normalization as extraction. */
+export function intakeValuesEqual(candidate: IntakeFieldCandidate, other: unknown): boolean {
+  const normalize = (value: unknown) => {
+    if (candidate.kind === 'phone') return normalizePhone(String(value ?? ''));
+    if (candidate.kind === 'date') return normalizeDate(String(value ?? ''));
+    if (candidate.kind === 'currency') return parseCurrencyValue(String(value ?? ''));
+    if (typeof value === 'string') return value.trim().replace(/\s+/g, ' ').toLowerCase();
+    return value;
+  };
+  return normalize(candidate.value) === normalize(other);
+}
+
+export function getIntakeFieldValue(job: RestorationJobData, candidate: IntakeFieldCandidate): unknown {
+  return getPathValue(job, candidate.path);
+}
+
+/** Apply only accepted source fields to the latest record, never a stale snapshot. */
+export function applyIntakeCandidates(
+  candidates: IntakeFieldCandidate[], job: RestorationJobData, provenance: ProvenanceRecord,
+  method: 'local' | 'ai', baseline?: RestorationJobData
+): IntakeParseResult {
+  const state = createEngineState(job);
+  state.provenance = { ...provenance };
+  for (const candidate of candidates) {
+    const before = getPathValue(state.job, candidate.path);
+    setPathValue(state.job, candidate.path, candidate.value);
+    state.provenance[candidate.key] = { source: candidate.source, detail: `${method === 'ai' ? 'AI (DeepSeek)' : 'Built-in extraction'}: ${candidate.display}` };
+    summarize(state, candidate, candidate.display, candidate.source, !intakeValuesEqual(candidate, before));
+  }
+  const protectedDefaults = new Set(baseline ? ['customer.jobNumber', 'customer.jobName', 'customer.mainPhone', 'insurance.lossDescription']
+    .filter(path => getPathValue(baseline, path) !== getPathValue(job, path)) : []);
+  if (candidates.length) finishMissingDefaults(state, true, candidates.some(c => ['totalApprovedRcv', 'deductible'].includes(c.key)), protectedDefaults);
+  return { jobData: state.job, provenance: state.provenance, candidates,
+    blockingMissingFields: collectBlockingFields(state.job), extractionSummary: {
+      fieldsExtractedCount: candidates.length,
+      fieldsUpdatedCount: [...state.entries.values()].filter(entry => entry.changed).length,
+      sections: buildSections(state.entries), warnings: [],
+    } };
 }
 
 

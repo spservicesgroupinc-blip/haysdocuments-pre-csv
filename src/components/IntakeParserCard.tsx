@@ -11,14 +11,13 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { RestorationJobData } from '../types/jobData';
+import { createEmptyJob } from '../types/jobData';
 import {
-  parseRawIntakeText,
-  applyAiExtractionToJob,
-  IntakeParseResult,
   ProvenanceRecord,
   FieldProvenanceType,
-  ExtractedSectionSummary,
 } from '../services/intakeParser';
+import { emptyIntakeState, IntakeCoordinator } from '../services/intakeCoordinator';
+import { IntakeExtractionReview } from './IntakeExtractionReview';
 import { analyzeIntakeWithAi } from '../services/deepseekIntake';
 import { extractTextFromPdfBuffer } from '../services/pdfExtractor';
 import { getMissingJobFields } from '../services/jobReadiness';
@@ -37,11 +36,11 @@ interface IntakeParserCardProps {
 const AUTO_PARSE_MIN_CHARS = 20;
 
 type ParseSource = 'manual' | 'paste' | 'file';
-type ParseMode = 'ai' | 'rules';
 
 export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
   onApplyIntake,
   currentJob,
+  currentProvenance,
   isExpanded = true,
   onExpand,
 }) => {
@@ -49,31 +48,34 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
   const [isExtractingPdf, setIsExtractingPdf] = useState(false);
   const [isReadingFile, setIsReadingFile] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [extraction, setExtraction] = useState(emptyIntakeState);
+  const [parseSource, setParseSource] = useState<ParseSource>('manual');
+  const isAnalyzing = extraction.ai.status === 'running';
   const [uploadedFileInfo, setUploadedFileInfo] = useState<{
     name: string;
     sizeKb: number;
     isPdf: boolean;
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [lastParseResult, setLastParseResult] = useState<{
-    fieldsCount: number;
-    updatedCount: number;
-    jobData: RestorationJobData;
-    warnings: string[];
-    sections: ExtractedSectionSummary[];
-    source: ParseSource;
-    mode: ParseMode;
-    aiNotes?: string;
-    aiError?: string;
-  } | null>(null);
+  const lastParseResult = extraction.result ? {
+    fieldsCount: extraction.result.extractionSummary.fieldsExtractedCount,
+    updatedCount: extraction.result.extractionSummary.fieldsUpdatedCount,
+    jobData: extraction.result.jobData,
+    ...extraction.result.extractionSummary,
+    source: parseSource,
+  } : null;
   const lastParsedTextRef = useRef('');
   const isActiveRef = useRef(true);
   const pasteTimerRef = useRef<number | null>(null);
   const fileReaderRef = useRef<FileReader | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const currentJobRef = useRef(currentJob);
-  currentJobRef.current = currentJob;
+  const currentJobRef = useRef<RestorationJobData | null>(null);
+  currentJobRef.current = currentJob ?? currentJobRef.current ?? createEmptyJob();
+  const provenanceRef = useRef(currentProvenance ?? {});
+  provenanceRef.current = currentProvenance ?? {};
+  const applyRef = useRef(onApplyIntake);
+  applyRef.current = onApplyIntake;
+  const coordinatorRef = useRef<IntakeCoordinator | null>(null);
   const intakeTextId = useId();
   const intakeHelpId = useId();
 
@@ -82,55 +84,34 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
     return () => {
       // A reset must discard work that finishes after this intake panel is removed.
       isActiveRef.current = false;
+      coordinatorRef.current?.cancel();
       if (pasteTimerRef.current !== null) window.clearTimeout(pasteTimerRef.current);
       if (fileReaderRef.current?.readyState === FileReader.LOADING) fileReaderRef.current.abort();
     };
   }, []);
 
-  const commitResult = (
-    result: IntakeParseResult,
-    source: ParseSource,
-    mode: ParseMode,
-    aiError?: string
-  ) => {
-    onApplyIntake(result.jobData, result.provenance);
-    setLastParseResult({
-      fieldsCount: result.extractionSummary.fieldsExtractedCount,
-      updatedCount: result.extractionSummary.fieldsUpdatedCount,
-      jobData: result.jobData,
-      warnings: result.extractionSummary.warnings,
-      sections: result.extractionSummary.sections,
-      source,
-      mode,
-      aiNotes: result.extractionSummary.aiNotes,
-      aiError,
+  const getCoordinator = () => {
+    if (!coordinatorRef.current) coordinatorRef.current = new IntakeCoordinator({
+      getJob: () => currentJobRef.current!,
+      getProvenance: () => provenanceRef.current,
+      apply: result => {
+        if (!isActiveRef.current) return;
+        currentJobRef.current = result.jobData;
+        provenanceRef.current = result.provenance;
+        applyRef.current(result.jobData, result.provenance);
+      },
+      onChange: state => { if (isActiveRef.current) setExtraction(state); },
+      analyzeAi: analyzeIntakeWithAi,
     });
+    return coordinatorRef.current;
   };
 
-  /** AI-first: DeepSeek reads and understands the document; rules parser is the fallback. */
   const handleParse = async (textToParse: string, source: ParseSource = 'manual') => {
     const trimmed = textToParse.trim();
-    if (!trimmed || isAnalyzing || !isActiveRef.current) return;
+    if (!trimmed || !isActiveRef.current) return;
     lastParsedTextRef.current = trimmed;
-
-    setIsAnalyzing(true);
-    try {
-      const payload = await analyzeIntakeWithAi(trimmed);
-      if (!isActiveRef.current) return;
-      const result = applyAiExtractionToJob(payload, currentJobRef.current);
-      commitResult(result, source, 'ai');
-    } catch (error) {
-      if (!isActiveRef.current) return;
-      const message = error instanceof Error ? error.message : String(error);
-      console.error('DeepSeek intake analysis failed:', error);
-      const result = parseRawIntakeText(trimmed, currentJobRef.current);
-      result.extractionSummary.warnings.unshift(
-        `AI analysis failed (${message}) - the built-in rules parser was used instead.`
-      );
-      commitResult(result, source, 'rules', message);
-    } finally {
-      if (isActiveRef.current) setIsAnalyzing(false);
-    }
+    setParseSource(source);
+    await getCoordinator().start(trimmed);
   };
 
   // Large pastes are parsed the moment they land, so "copy, paste, done" is one step.
@@ -150,10 +131,11 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
   };
 
   const processFile = async (file: File) => {
-    if (isExtractingPdf || isReadingFile || isAnalyzing || !isActiveRef.current) return;
+    if (isExtractingPdf || isReadingFile || !isActiveRef.current) return;
+    coordinatorRef.current?.cancel();
     const isPdf = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
     setFileError(null);
-    setLastParseResult(null);
+    setExtraction(emptyIntakeState());
     setIntakeText('');
     setUploadedFileInfo({
       name: file.name,
@@ -219,7 +201,7 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    if (isExtractingPdf || isReadingFile || isAnalyzing) return;
+    if (isExtractingPdf || isReadingFile) return;
     setIsDragging(true);
   };
 
@@ -253,6 +235,7 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
   };
 
   const isBusy = isExtractingPdf || isReadingFile || isAnalyzing;
+  const isReadingInput = isExtractingPdf || isReadingFile;
   const readinessJob = currentJob ?? lastParseResult?.jobData;
   const missingJobFields = readinessJob ? getMissingJobFields(readinessJob) : [];
   const hasUnanalyzedText = Boolean(intakeText.trim() && intakeText.trim() !== lastParsedTextRef.current);
@@ -306,7 +289,7 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
         <div>
           <h3 className="text-lg font-semibold text-slate-900">Bring in your job information</h3>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
-            Upload an intake file or paste DASH notes, carrier emails, and estimate details. AI intake analysis fills in the matching job fields for you.
+            Upload an intake file or paste DASH notes, carrier emails, and estimate details. Built-in extraction fills fields immediately while AI checks for more details.
           </p>
         </div>
       </div>
@@ -328,7 +311,7 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={isBusy}
+            disabled={isReadingInput}
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-50"
           >
             <Upload className="h-4 w-4" aria-hidden="true" />
@@ -340,7 +323,7 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
             aria-label="Upload intake file"
             accept=".pdf,application/pdf,.txt,.json,.csv,.log"
             onChange={handleFileUpload}
-            disabled={isBusy}
+            disabled={isReadingInput}
             className="hidden"
           />
         </div>
@@ -375,7 +358,7 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
           aria-describedby={intakeHelpId}
           rows={7}
           value={intakeText}
-          disabled={isBusy}
+          disabled={isReadingInput}
           onChange={(e) => {
             setIntakeText(e.target.value);
             setFileError(null);
@@ -389,7 +372,7 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
           <button
             type="button"
             onClick={() => handleParse(intakeText)}
-            disabled={!intakeText.trim() || isBusy || Boolean(fileError)}
+            disabled={!intakeText.trim() || isReadingInput || (isAnalyzing && !hasUnanalyzedText) || Boolean(fileError)}
             className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white transition hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
@@ -402,11 +385,18 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
         )}
       </div>
 
-      {lastParseResult && !isBusy && (
+      <IntakeExtractionReview
+        state={extraction}
+        currentJob={currentJob}
+        onRetryAi={() => { void getCoordinator().retryAi(); }}
+        onResolve={(key, useAi) => getCoordinator().resolveConflict(key, useAi)}
+      />
+
+      {lastParseResult && (
         <div className="mt-6 border-t border-slate-200 pt-5">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
             <CheckCircle2 className="h-5 w-5 text-emerald-600" aria-hidden="true" />
-            {hasUnanalyzedText ? 'Last intake analysis' : 'Job information updated'}
+            {hasUnanalyzedText ? 'Last intake analysis' : lastParseResult.updatedCount ? 'Job information updated' : 'Extraction ready to review'}
           </div>
           <div className="mt-3 grid grid-cols-2 gap-3">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -418,10 +408,6 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
               <span className="text-xs text-emerald-700">Job values updated</span>
             </div>
           </div>
-
-          {lastParseResult.aiError && (
-            <p className="mt-3 flex items-start gap-2 text-sm leading-relaxed text-amber-800"><Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />AI analysis was unavailable. Built-in extraction was used; please review the job values.</p>
-          )}
 
           {missingJobFields.length > 0 ? (
             <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -441,8 +427,8 @@ export const IntakeParserCard: React.FC<IntakeParserCardProps> = ({
               <ChevronDown className="h-4 w-4 shrink-0 transition group-open:rotate-180" aria-hidden="true" />
             </summary>
             <div className="space-y-3 border-t border-slate-200 p-4">
-              <p className="text-xs text-slate-500">{lastParseResult.mode === 'ai' ? 'AI intake analysis' : 'Built-in extraction'} · {lastParseResult.source === 'file' ? 'Uploaded file' : lastParseResult.source === 'paste' ? 'Pasted notes' : 'Intake notes'}</p>
-              {lastParseResult.mode === 'ai' && lastParseResult.aiNotes && (
+              <p className="text-xs text-slate-500">Built-in and AI extraction · {lastParseResult.source === 'file' ? 'Uploaded file' : lastParseResult.source === 'paste' ? 'Pasted notes' : 'Intake notes'}</p>
+              {lastParseResult.aiNotes && (
                 <p className="rounded-lg bg-blue-50 p-3 text-sm leading-relaxed text-blue-900">{lastParseResult.aiNotes}</p>
               )}
               {lastParseResult.sections.map((section) => (
