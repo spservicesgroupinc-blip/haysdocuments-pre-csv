@@ -1,11 +1,13 @@
 /** Apps Script transport shared by sign-in, customer saves and draft sync. */
 export class DatabaseError extends Error {
   readonly code: string;
+  readonly details?: unknown;
 
-  constructor(message: string, code = 'unknown') {
+  constructor(message: string, code = 'unknown', details?: unknown) {
     super(message);
     this.name = 'DatabaseError';
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -38,7 +40,7 @@ function unreadableResponse(response: Response, body: string): DatabaseError {
   if (response.status === 404 || response.status === 410
     || /unable to open the file|file you have requested does not exist|page not found/i.test(body)) {
     return new DatabaseError(
-      'The Apps Script deployment is no longer available. Update src/config/appsScript.ts to the active /exec URL and rebuild the app.',
+      'The Apps Script deployment is no longer available. Update src/config/appsScript.ts to the active Apps Script /exec URL and rebuild the app.',
       'bad_response'
     );
   }
@@ -82,11 +84,11 @@ export async function requestDatabase<T>(
       || !('ok' in envelope) || typeof envelope.ok !== 'boolean') {
       throw unreadableResponse(response, body);
     }
-    const result = envelope as { ok: boolean; data?: T; error?: unknown; code?: unknown };
+    const result = envelope as { ok: boolean; data?: T; error?: unknown; code?: unknown; details?: unknown };
     if (!result.ok) {
       throw new DatabaseError(
         typeof result.error === 'string' ? result.error : 'The database rejected the request.',
-        typeof result.code === 'string' ? result.code : 'unknown'
+        typeof result.code === 'string' ? result.code : 'unknown', result.details
       );
     }
     if (!('data' in result)) throw unreadableResponse(response, body);

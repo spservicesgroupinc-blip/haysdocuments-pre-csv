@@ -49,6 +49,11 @@ existing deployment**, keeping its `/exec` URL. `npm run apps:paste` and
 
 ## Commands
 
+Choose **Account → Appearance → Light / Dark** to change the app theme. The sign-in
+screen also offers the same choice. The preference is saved on this device and restored
+before the app renders; a first visit follows the device's appearance setting. Document
+previews and exported PDFs retain their white paper background.
+
 Intake runs built-in extraction immediately and DeepSeek independently in the background.
 Either method can succeed when the other fails. Local results remain editable and saveable
 while AI runs; AI fills missing fields and offers differing values with **Keep current**

@@ -49,6 +49,10 @@ import {
 } from './localDb';
 import { createRecordId, type RestorationJobData } from '../types/jobData';
 import { requestOutboxSync } from './pwa';
+import { workflowAvailable, deviceId } from './workflowCapabilities';
+import { callAuthenticatedAppsScript } from './appsScriptService';
+interface ServerScopedDraft { job: RestorationJobData; recordId: string; revision: number; updatedAt: string; updatedBy: string }
+interface ServerScopedDrafts { drafts: ServerScopedDraft[] }
 
 export interface SyncState {
   online: boolean;
@@ -169,6 +173,7 @@ function summaryFromRecord(record: RestorationJobData, prior?: JobSummary | null
     carrier: record.insurance?.carrier || prior?.carrier || '',
     claimNumber: record.insurance?.claimNumber || prior?.claimNumber || '',
     status: prior?.status || 'Draft',
+    revision: record.revision ?? prior?.revision,
     createdAt: prior?.createdAt || record.dateCreated || new Date().toISOString(),
     updatedAt: prior?.updatedAt || '',
     updatedBy: prior?.updatedBy || '',
@@ -414,6 +419,8 @@ export async function saveJobOffline(job: RestorationJobData): Promise<SaveJobOu
     createdAt: Date.now(),
     attempts: 0,
     owner: owner ?? undefined,
+    mutationId: createRecordId(),
+    expectedRevision: record.revision ?? existing?.record?.revision ?? (existing?.baseUpdatedAt || existing?.summary?.updatedAt ? 1 : 0),
   });
   await refreshPendingState();
 
@@ -464,6 +471,8 @@ export async function deleteJobOffline(recordId: string): Promise<DeleteJobOutco
     createdAt: Date.now(),
     attempts: 0,
     owner: owner ?? undefined,
+    mutationId: createRecordId(),
+    expectedRevision: existing?.record?.revision ?? existing?.summary?.revision ?? (existing?.summary?.updatedAt ? 1 : 0),
   });
   await refreshPendingState();
 
@@ -553,16 +562,23 @@ async function doFlush(): Promise<void> {
       }
     }
 
-    for (const op of ops) {
+    for (let op of ops) {
       if (currentOwner() !== owner || !state.online) return;
       // A replaced draft has a new operation ID; do not send the stale snapshot.
-      if (!(await getOutboxOps()).some(item => item.id === op.id)) continue;
+      const latestOp = (await getOutboxOps()).find(item => item.id === op.id);
+      if (!latestOp) continue;
+      op = latestOp;
+      if (op.blocked || (await getOutboxOps()).some(item => item.id! < op.id! && item.recordId === op.recordId && item.blocked)) { hadFailure = true; continue; }
       const mirror = await getMirrorJob(op.recordId);
       try {
         let published = true;
         if (op.type === 'draft' && op.draft) {
           published = await pushDraft(auth, op);
         } else if (op.type === 'save' && op.job) {
+          if (!op.mutationId || !op.dispatched) {
+            op = { ...op, mutationId: op.mutationId || createRecordId(), expectedRevision: op.expectedRevision ?? op.job.revision ?? (mirror?.baseUpdatedAt ? 1 : 0), dispatched: true };
+            await updateOutboxOp(op);
+          }
           const serverRow = serverRows?.get(op.recordId);
           if (
             mirror?.baseUpdatedAt &&
@@ -573,12 +589,16 @@ async function doFlush(): Promise<void> {
               serverRow.updatedBy && serverRow.updatedBy !== getCurrentUser()?.email
                 ? ` by ${serverRow.updatedBy}`
                 : '';
-            conflictLine = `${serverRow.jobNumber || op.job.customer?.jobNumber || 'A record'} was changed${actor} after your last download`;
+            conflictLine = `${serverRow.jobNumber || op.job?.customer?.jobNumber || 'A record'} was changed${actor} after your last download`;
           }
-          const result = await saveJob(auth, op.job);
+          const result = await saveJob(auth, op.job!, { mutationId: op.mutationId!, expectedRevision: op.expectedRevision! });
           await applyServerSave(op, result.record);
         } else if (op.type === 'delete') {
-          await deleteJob(auth, op.recordId);
+          if (!op.mutationId || !op.dispatched) {
+            op = { ...op, mutationId: op.mutationId || createRecordId(), expectedRevision: op.expectedRevision ?? mirror?.record?.revision ?? 1, dispatched: true };
+            await updateOutboxOp(op);
+          }
+          await deleteJob(auth, op.recordId, false, { mutationId: op.mutationId!, expectedRevision: op.expectedRevision! });
           await completeOutboxOp(op);
         } else {
           throw new DatabaseError('A queued change is incomplete. Keep this device copy and save the job again.', 'invalid_operation');
@@ -588,6 +608,13 @@ async function doFlush(): Promise<void> {
         }
         await refreshPendingState();
       } catch (err) {
+        if (err instanceof DatabaseError && err.code === 'conflict') {
+          const details = err.details as { current?: RestorationJobData } | undefined;
+          await updateOutboxOp({ ...op, blocked: true, conflictRecord: details?.current, lastError: err.message });
+          hadFailure = true;
+          patchState({ lastError: 'This job changed on another device. Your copy is saved here and needs review.', errorCode: 'conflict', conflictNotice: 'Review the conflicting job before publishing this device copy.' });
+          continue;
+        }
         if (isNetworkish(err)) {
           await updateOutboxOp({ ...op, attempts: op.attempts + 1, lastError: errorMessage(err) });
           patchState({ lastError: errorMessage(err) });
@@ -656,6 +683,15 @@ async function pushDraft(auth: AuthContext, op: OutboxOp): Promise<boolean> {
   if (!op.draft) return true;
   const draft = op.draft;
 
+  if (workflowAvailable()) {
+    if (!op.mutationId) { op = { ...op, mutationId: createRecordId() }; await updateOutboxOp(op); }
+    const result = await callAuthenticatedAppsScript<ServerScopedDrafts>('listWorkspaceDrafts', { deviceId: deviceId() });
+    const previous = result.drafts.find(item => item.recordId === (draft.recordId ?? draft.job.recordId));
+    if (!op.dispatched) { op = { ...op, expectedRevision: previous?.revision ?? 0, dispatched: true }; await updateOutboxOp(op); }
+    const saved = await callAuthenticatedAppsScript<ServerScopedDraft>('saveWorkspaceDraft', { jobId: draft.recordId ?? draft.job.recordId, deviceId: deviceId(), mutationId: op.mutationId, expectedRevision: op.expectedRevision, job: draft.job });
+    await completeOutboxOp(op, undefined, { ...draft, revision: saved.revision, serverUpdatedAt: saved.updatedAt, updatedBy: saved.updatedBy });
+    return true;
+  }
   const saved = await saveDraft(auth, {
     job: draft.job,
     recordId: draft.recordId,
@@ -877,7 +913,9 @@ export async function restoreDraft(onLocal?: (draft: RestoredDraft) => void): Pr
 
   try {
     const auth = await acquireAuthContext();
-    const server = await fetchDraft(auth);
+    const server = workflowAvailable()
+      ? (await callAuthenticatedAppsScript<ServerScopedDrafts>('listWorkspaceDrafts', { deviceId: deviceId() })).drafts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null
+      : await fetchDraft(auth);
     if (currentOwner() !== owner) return undefined;
     // Typing during recovery always wins over a delayed server response.
     const latest = await safeGetDraft();

@@ -51,6 +51,11 @@ export interface OutboxOp {
   lastError?: string;
   /** Account that queued the write; only that account replays it. */
   owner?: string;
+  mutationId?: string;
+  expectedRevision?: number;
+  dispatched?: boolean;
+  blocked?: boolean;
+  conflictRecord?: RestorationJobData;
 }
 
 export interface WorkspaceDraft {
@@ -63,10 +68,11 @@ export interface WorkspaceDraft {
   /** Who last wrote the draft server-side, when known. */
   updatedBy?: string;
   owner?: string;
+  revision?: number;
 }
 
 const DB_NAME = 'hays.docsuite';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 const JOBS = 'jobs';
 const OUTBOX = 'outbox';
@@ -74,6 +80,7 @@ const DRAFTS = 'drafts';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+export function openWorkspaceDb(): Promise<IDBDatabase> { return openDb(); }
 function openDb(): Promise<IDBDatabase> {
   if (!dbPromise) {
     dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
@@ -85,6 +92,9 @@ function openDb(): Promise<IDBDatabase> {
           db.createObjectStore(OUTBOX, { keyPath: 'id', autoIncrement: true });
         }
         if (!db.objectStoreNames.contains(DRAFTS)) db.createObjectStore(DRAFTS, { keyPath: 'id' });
+        for (const name of ['workflowItems', 'workflowOutbox', 'workflowBlobs', 'workflowConflicts']) {
+          if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: 'key' });
+        }
       };
       request.onsuccess = () => {
         const db = request.result;
@@ -292,6 +302,13 @@ export async function completeOutboxOp(op: OutboxOp, mirror?: MirrorJob, draft?:
       const ops = request.result as OutboxOp[];
       outbox.delete(op.id!);
       if (op.type !== 'draft') {
+        if (mirror?.record?.revision !== undefined) {
+          for (const pending of ops) {
+            if (pending.id! > op.id! && pending.recordId === op.recordId && !pending.dispatched && pending.type !== 'draft') {
+              outbox.put({ ...pending, expectedRevision: mirror.record.revision, job: pending.job ? { ...pending.job, revision: mirror.record.revision } : undefined });
+            }
+          }
+        }
         const newer = ops.some((item) => item.type !== 'draft' && item.recordId === op.recordId && item.id! > op.id!);
         if (!newer) {
           if (mirror) tx.objectStore(JOBS).put(mirror);

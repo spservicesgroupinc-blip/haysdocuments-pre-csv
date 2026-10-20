@@ -30,6 +30,7 @@ test('appearance switches both themes, supports keyboard, and persists after rel
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(appearance.getByRole('button', { name: 'Dark', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(11, 18, 32)');
+  await expect(page.locator('#saved-jobs-search')).toHaveCSS('background-color', 'rgb(11, 18, 32)');
   await expect(page.getByRole('banner')).toHaveCSS('color-scheme', 'dark');
   await page.keyboard.press('Escape');
   await page.screenshot({ path: 'test-results/theme-dark-desktop.png', fullPage: true });
@@ -56,7 +57,7 @@ test('first visit follows system preference and an explicit choice overrides it 
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#f8fafc');
 });
 
-test('dark forms, notices, and appearance controls fit mobile and tablet screens', async ({ page }) => {
+test('dark forms and appearance controls fit mobile and tablet screens', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.emulateMedia({ colorScheme: 'dark' });
@@ -77,6 +78,19 @@ test('dark forms, notices, and appearance controls fit mobile and tablet screens
   expect(errors).toEqual([]);
 });
 
+test('dark intake keeps local results and failure notices readable when AI is unavailable', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.route('https://api.deepseek.com/chat/completions', route => route.fulfill({ status: 401, contentType: 'application/json', body: '{}' }));
+  await startWorkspace(page);
+  await page.getByRole('button', { name: 'Import job information', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Or paste intake notes', exact: true }).fill('Customer Name: Dark intake check\nClaim Number: THEME-1');
+  await page.getByRole('button', { name: 'Analyze intake', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Retry AI', exact: true })).toBeVisible();
+  const warning = page.getByText('Required information to confirm', { exact: true }).locator('..');
+  await expect(warning).toHaveCSS('background-color', 'rgb(48, 37, 22)');
+  await page.screenshot({ path: 'test-results/theme-dark-intake.png', fullPage: true });
+});
+
 test('signed-out users can change appearance even if preference storage is unavailable', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light' });
   await page.addInitScript(() => {
@@ -89,4 +103,17 @@ test('signed-out users can change appearance even if preference storage is unava
   await appearance.getByRole('button', { name: 'Dark', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(page.locator('#login-email')).toBeVisible();
+});
+
+test('dark appearance keeps rendered PDF pages white and readable', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await startWorkspace(page);
+  await page.getByRole('button', { name: 'Enter manually', exact: true }).click();
+  await page.locator('#customer-customerName').fill('PDF theme check');
+  await page.getByRole('button', { name: 'Preview Customer Welcome Letter PDF', exact: true }).click();
+  const canvas = page.locator('canvas');
+  await expect(canvas).toBeVisible();
+  await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => [...node.getContext('2d')!.getImageData(5, 5, 1, 1).data])).toEqual([255, 255, 255, 255]);
+  await expect(canvas.locator('..')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await page.screenshot({ path: 'test-results/theme-dark-pdf.png', fullPage: true });
 });

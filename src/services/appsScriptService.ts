@@ -15,6 +15,7 @@ export { DatabaseError } from './appsScriptTransport';
 
 /** Lightweight row used by the job library list (no full record). */
 export interface JobSummary {
+  revision?: number;
   recordId: string;
   jobNumber: string;
   jobName: string;
@@ -348,9 +349,10 @@ export async function pingDatabase(): Promise<{ pong: boolean; schemaVersion: nu
 /** Creates or updates a job. Upsert is keyed on `record.recordId`. */
 export async function saveJob(
   auth: AuthContext,
-  job: RestorationJobData
+  job: RestorationJobData,
+  write?: { mutationId: string; expectedRevision: number }
 ): Promise<{ record: RestorationJobData; created: boolean; recordId: string }> {
-  const data = await callApi<any>('saveJob', { ...auth, job });
+  const data = await callApi<any>('saveJob', { ...auth, job, ...(write ? { ...write, protocolVersion: 2 } : {}) });
   const acknowledged = data?.record ?? data;
   if (!acknowledged || typeof acknowledged !== 'object' || !acknowledged.recordId
     || acknowledged.recordId !== job.recordId) {
@@ -399,9 +401,10 @@ export async function getJob(
 export async function deleteJob(
   auth: AuthContext,
   recordId: string,
-  hard = false
+  hard = false,
+  write?: { mutationId: string; expectedRevision: number }
 ): Promise<{ deleted: boolean; hard: boolean; recordId: string }> {
-  const data = await callApi<any>('deleteJob', { ...auth, recordId, hard });
+  const data = await callApi<any>('deleteJob', { ...auth, recordId, hard, ...(write ? { ...write, protocolVersion: 2 } : {}) });
   return {
     deleted: data?.deleted !== false,
     hard: data?.hard === true || hard,

@@ -88,6 +88,17 @@ Tailwind's `red-600`, so existing `bg-red-600` call sites are already correct an
 Logo ink is `#1A1A1A` (`--color-ink`), shared by the plus and the wordmark so the mark reads as one
 unit. `COLOR_DARK` in `pdfService.ts` now uses the same value.
 
+### App appearance
+
+App components use the semantic surface, text, border, and status colors in `src/theme.css`.
+Light appearance uses the palette above; dark appearance uses a navy canvas (`#0B1220`),
+raised surfaces (`#111C2E`), light text, and lighter status copy on subdued tinted surfaces.
+Brand red remains the action color. The in-app logo automatically uses light ink in dark
+appearance; printed documents keep their original black ink and white paper.
+
+The Appearance control is available in the account panel and on the sign-in screen.
+The saved choice takes precedence over the device setting and is applied before first paint.
+
 ---
 
 ## 3. Typography

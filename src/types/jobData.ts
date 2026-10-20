@@ -120,6 +120,8 @@ export interface RestorationJobData {
   updatedAt?: string;
   /** Record schema version, for future migrations. */
   schemaVersion?: number;
+  /** Server revision used for safe concurrent writes. Unsaved records start at zero. */
+  revision?: number;
   customer: CustomerData;
   insurance: InsuranceData;
   financials: FinancialData;
@@ -147,7 +149,7 @@ export interface RestorationJobData {
 }
 
 /** Current record schema version. Bump when the stored record shape changes. */
-export const RECORD_SCHEMA_VERSION = 1;
+export const RECORD_SCHEMA_VERSION = 2;
 
 /**
  * Generates an immutable record key. Uses the Web Crypto API when available and
