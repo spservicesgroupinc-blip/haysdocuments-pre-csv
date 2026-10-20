@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { STAGES, STAGE_LABELS, closeoutBlockers, createCloseout, isOverdue, itemOf, newId, validatePayload, workflowOf, type JobStage } from '../types/workflow';
-import { ActionState, Field, Message, Panel, control, grid, primary, useAction, useDraft, type WorkflowWorkspaceProps } from './workflow/shared';
+import { ActionState, DraftNotice, Field, Message, Panel, control, grid, primary, useAction, useDraft, type WorkflowWorkspaceProps } from './workflow/shared';
 
 export type WorkflowProgressProps = Pick<WorkflowWorkspaceProps, 'job' | 'items' | 'readOnly' | 'onSave'> & Partial<Pick<WorkflowWorkspaceProps, 'pendingCount' | 'error'>>;
 
@@ -19,13 +19,14 @@ export function WorkflowProgress({ job, items, readOnly, onSave, pendingCount = 
     form.change({ ...draft, nextAction: field === 'name' || field === 'email' ? { ...valueNext, responsiblePerson: { ...valueNext.responsiblePerson, [field]: value } } : { ...valueNext, [field]: value } });
   }
   async function save() {
+    form.assertCurrent();
     const payload = { ...draft, nextAction: draft.nextAction?.title.trim() ? draft.nextAction : null };
     if (payload.stage === 'complete') {
       const closeout = itemOf(items, 'closeout')[0]?.payload ?? createCloseout();
-      if ((!closeout.completionDate || closeoutBlockers(closeout).length) && !closeout.completionOverrideReason.trim()) throw new Error('Review Closeout and resolve outstanding items or record an override before marking complete.');
+      if (!closeout.completionDate || (closeoutBlockers(closeout).length && !closeout.completionOverrideReason.trim())) throw new Error('Review Closeout, record its completion date, and resolve outstanding items or record an override before marking complete.');
     }
     validatePayload('workflow', payload);
-    await onSave('workflow', stored?.itemId ?? 'workflow', payload);
+    await onSave('workflow', stored?.itemId ?? `workflow:${job.recordId || job.id}`, payload);
     form.saved(); setExpanded(false);
   }
   return <Panel title="Job progress" description="One stage and one clear next step for the team.">
@@ -34,7 +35,7 @@ export function WorkflowProgress({ job, items, readOnly, onSave, pendingCount = 
     {error ? <Message error>{error}</Message> : null}
     {pendingCount > 0 ? <p role="status" className="text-xs text-warning-copy">Saved on this device · {pendingCount} waiting to sync</p> : null}
     {expanded ? <form onSubmit={event => { event.preventDefault(); void action.run(save, 'Saved on this device. Sync status is shown above.'); }} className="space-y-4">
-      <fieldset disabled={readOnly || action.busy} className="min-w-0 space-y-4">
+      <DraftNotice form={form} /><fieldset disabled={readOnly || action.busy} className="min-w-0 space-y-4">
         <Field label="Job stage"><select className={control} value={draft.stage} onChange={event => form.change({ ...draft, stage: event.target.value as JobStage })}>{STAGES.map(stage => <option value={stage} key={stage}>{STAGE_LABELS[stage]}</option>)}</select></Field>
         {draft.stage === 'on_hold' ? <Field label="Hold reason"><textarea className={control} required rows={2} maxLength={8000} value={draft.holdReason} onChange={event => form.change({ ...draft, holdReason: event.target.value })} /></Field> : null}
         <Field label="Next action" help="Leave blank to clear the action."><input className={control} maxLength={500} value={next?.title ?? ''} placeholder="Confirm the flooring selection" onChange={event => updateAction('title', event.target.value)} /></Field>

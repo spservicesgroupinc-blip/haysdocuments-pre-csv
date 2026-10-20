@@ -15,7 +15,7 @@ export interface SnapshotSection { title: string; rows: Array<{ label: string; v
 export interface SourceReference { kind: string; itemId: string; revision: number; updatedAt: string }
 export interface WorkflowSnapshot {
   version: 1;
-  type: 'handoff' | 'closeout';
+  type: 'handoff' | 'closeout' | 'change_order';
   audience: ExportAudience;
   reviewState: 'draft' | 'final';
   jobId: string;
@@ -83,7 +83,8 @@ function sourceReferences(job: RestorationJobData, items: JobItem[]): SourceRefe
   const jobId = job.recordId || job.id;
   return [
     { kind: 'job', itemId: jobId, revision: Number((job as RestorationJobData & { revision?: number }).revision) || 0, updatedAt: job.updatedAt || '' },
-    ...items.filter(item => item.kind !== 'artifact').map(item => ({ kind: item.kind, itemId: item.itemId, revision: item.revision, updatedAt: item.updatedAt })),
+    ...items.filter(item => item.kind !== 'artifact' && !(item.kind === 'attachment' && item.payload.parent.kind === 'artifact'))
+      .map(item => ({ kind: item.kind, itemId: item.itemId, revision: item.revision, updatedAt: item.updatedAt })),
   ].sort((a, b) => `${a.kind}:${a.itemId}`.localeCompare(`${b.kind}:${b.itemId}`, 'en-US'));
 }
 
@@ -180,9 +181,16 @@ function wrappedLines(value: string, font: PDFFont, size: number, width: number)
   return result;
 }
 
+function footerText(value: string, font: PDFFont): string {
+  let text = cleanTextForPdf(value);
+  if (font.widthOfTextAtSize(text, 8) <= 516) return text;
+  while (text && font.widthOfTextAtSize(`${text}...`, 8) > 516) text = text.slice(0, -1);
+  return `${text}...`;
+}
+
 async function summaryPdf(snapshot: WorkflowSnapshot): Promise<PDFDocument> {
   const pdf = await PDFDocument.create();
-  pdf.setTitle(snapshot.type === 'handoff' ? 'Internal production handoff' : 'Completion summary');
+  pdf.setTitle(snapshot.type === 'handoff' ? 'Internal production handoff' : snapshot.type === 'change_order' ? 'Change order scope continuation' : 'Completion summary');
   pdf.setAuthor('Hays + Sons Complete Restoration');
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -199,7 +207,7 @@ async function summaryPdf(snapshot: WorkflowSnapshot): Promise<PDFDocument> {
     page = pdf.addPage([612, 792]);
     page.drawText('Hays+Sons', { x: 48, y: 746, size: 22, font: bold, color: INK });
     page.drawRectangle({ x: 48, y: 724, width: 516, height: 3, color: RED });
-    const title = snapshot.type === 'handoff' ? 'PRODUCTION HANDOFF' : 'COMPLETION SUMMARY';
+    const title = snapshot.type === 'handoff' ? 'PRODUCTION HANDOFF' : snapshot.type === 'change_order' ? 'CHANGE ORDER - SCOPE CONTINUATION' : 'COMPLETION SUMMARY';
     page.drawText(title, { x: 48, y: 700, size: 15, font: bold, color: INK });
     const label = `${snapshot.reviewState === 'draft' ? 'DRAFT - ' : ''}${snapshot.audience === 'internal' ? 'Internal use' : snapshot.audience === 'customer' ? 'Customer copy' : 'Carrier / depreciation support'}`;
     page.drawText(label, { x: 48, y: 681, size: 9, font: bold, color: snapshot.reviewState === 'draft' ? RED : MUTED });
@@ -214,24 +222,33 @@ async function summaryPdf(snapshot: WorkflowSnapshot): Promise<PDFDocument> {
     snapshot.reviewWarnings.forEach(warning => text(`- ${warning}`, 9));
   }
   for (const current of snapshot.sections) {
+    if (!current.rows.length) {
+      y -= 9;
+      text(`${current.title}: None recorded`, 9, regular, MUTED);
+      continue;
+    }
     if (y < 110) addPage();
     y -= 12;
     text(current.title, 11, bold);
     page.drawLine({ start: { x: 48, y: y + 4 }, end: { x: 564, y: y + 4 }, thickness: 0.5, color: RULE });
     y -= 5;
-    if (!current.rows.length) text('None recorded', 9, regular, MUTED);
     for (const value of current.rows) {
-      if (y < 92) addPage();
-      text(value.label, 8, bold, MUTED);
-      text(value.value, 10);
-      y -= 5;
+      const inline = `${value.label}: ${value.value}`;
+      if (!value.value.includes('\n') && regular.widthOfTextAtSize(cleanTextForPdf(inline), 10) <= 516) {
+        text(inline, 10);
+      } else {
+        if (y < 92) addPage();
+        text(value.label, 8, bold, MUTED);
+        text(value.value, 10);
+      }
+      y -= 3;
     }
   }
   const total = pdf.getPageCount();
   for (const [index, current] of pdf.getPages().entries()) {
     current.drawLine({ start: { x: 48, y: 48 }, end: { x: 564, y: 48 }, thickness: 0.5, color: RULE });
     const footer = `${safeAttachmentName(snapshot.jobNumber || 'Job')} | Hays + Sons | Page ${index + 1} of ${total}`;
-    current.drawText(cleanTextForPdf(footer), { x: 48, y: 32, size: 8, font: regular, color: MUTED, maxWidth: 516 });
+    current.drawText(footerText(footer, regular), { x: 48, y: 32, size: 8, font: regular, color: MUTED });
   }
   return pdf;
 }
@@ -271,14 +288,21 @@ export function buildRegisteredChangeOrderData(job: RestorationJobData, change: 
 export async function generateRegisteredChangeOrder(job: RestorationJobData, change: JobItem<'change'>,
   workflow: WorkflowPayload, priorChanges: JobItem<'change'>[]): Promise<Uint8Array> {
   const adapted = buildRegisteredChangeOrderData(job, change, workflow, priorChanges);
-  const original = await generateChangeOrder(adapted);
-  const pdf = await PDFDocument.load(original);
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  if (wrappedLines(adapted.changeOrder.scopeDescription, font, 8.5, 480).length <= 9) return original;
+  // Unreviewed migrated records reproduce their compatibility form exactly.
+  if (change.payload.legacy && !workflow.baselineReviewed) return generateChangeOrder(adapted);
+  const measurement = await PDFDocument.create();
+  const font = await measurement.embedFont(StandardFonts.Helvetica);
+  const lines = wrappedLines(adapted.changeOrder.scopeDescription, font, 8.5, 480);
+  const overlongWord = cleanTextForPdf(adapted.changeOrder.scopeDescription).split(/\s+/)
+    .some(word => font.widthOfTextAtSize(word, 8.5) > 480);
+  if (lines.length <= 9 && !overlongWord) return generateChangeOrder(adapted);
+  const firstPageData = structuredClone(adapted);
+  firstPageData.changeOrder.scopeDescription = `${lines.slice(0, 7).join(' ')} Full scope continues on the attached pages.`;
+  const pdf = await PDFDocument.load(await generateChangeOrder(firstPageData));
   // Preserve the approved original form; append the complete scope when its fixed box is too small.
-  const snapshot = makeSnapshot(job, [change], 'handoff', 'internal', [section('Complete change-order scope', [
+  const snapshot = makeSnapshot(job, [change], 'change_order', 'customer', [section('Complete change-order scope', [
     row('Change number', adapted.changeOrder.changeOrderNumber), row('Scope - continuation of original change order', adapted.changeOrder.scopeDescription),
-  ])], [], { reviewState: change.payload.documentArtifactId ? 'final' : 'draft' });
+  ])], [], { reviewState: change.payload.lifecycle === 'draft' ? 'draft' : 'final' });
   const appendix = await PDFDocument.load(await generateWorkflowSummary(snapshot));
   const copied = await pdf.copyPages(appendix, appendix.getPageIndices());
   copied.forEach(page => pdf.addPage(page));
@@ -323,7 +347,7 @@ async function photoAppendices(photos: SelectedExportFile[], snapshot: WorkflowS
         captionLines.slice(start, start + 44).forEach((line, index) => continuation.drawText(line, { x: 48, y: 710 - index * 14, size: 9, font: regular, color: INK }));
       }
     }
-    pdf.getPages().forEach((page, index) => page.drawText(`${safeAttachmentName(snapshot.jobNumber || 'Job')} | ${snapshot.audience} | Page ${index + 1} of ${pdf.getPageCount()}`,
+    pdf.getPages().forEach((page, index) => page.drawText(footerText(`${safeAttachmentName(snapshot.jobNumber || 'Job')} | ${snapshot.audience} | Page ${index + 1} of ${pdf.getPageCount()}`, regular),
       { x: 48, y: 32, size: 8, font: regular, color: MUTED }));
     return pdf.save();
   };

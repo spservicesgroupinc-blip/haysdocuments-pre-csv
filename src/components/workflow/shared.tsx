@@ -12,6 +12,7 @@ export interface WorkflowWorkspaceProps {
   section?: 'updates' | 'handoff' | 'selections' | 'changes' | 'closeout';
   actorEmail?: string;
   isAdmin?: boolean;
+  onNavigate?: (section: 'customer' | 'insurance' | 'financials' | 'productionNotes' | 'changeOrder') => void;
   onSave: (kind: ItemKind, itemId: string, payload: ItemPayloads[ItemKind]) => Promise<void>;
   onDelete: (item: JobItem) => Promise<void>;
   onAttach: (parent: { kind: ItemKind; itemId: string }, files: File[]) => Promise<void>;
@@ -64,9 +65,17 @@ export function useDraft<T>(source: T, identity: string) {
   const [draft, setDraft] = useState<T>(() => structuredClone(source));
   const [dirty, setDirty] = useState(false);
   const serialized = JSON.stringify(source);
-  useEffect(() => { setDraft(JSON.parse(serialized) as T); setDirty(false); }, [identity]);
-  useEffect(() => { if (!dirty) setDraft(JSON.parse(serialized) as T); }, [serialized, dirty]);
-  return { draft, dirty, change: (value: T) => { setDraft(value); setDirty(true); }, saved: () => setDirty(false) };
+  const [base, setBase] = useState(serialized);
+  const changedElsewhere = dirty && base !== serialized;
+  useEffect(() => { setDraft(JSON.parse(serialized) as T); setBase(serialized); setDirty(false); }, [identity]);
+  useEffect(() => { if (!dirty) { setDraft(JSON.parse(serialized) as T); setBase(serialized); } }, [serialized, dirty]);
+  return { draft, dirty, changedElsewhere, change: (value: T) => { setDraft(value); setDirty(true); }, saved: () => setDirty(false),
+    reload: () => { setDraft(JSON.parse(serialized) as T); setBase(serialized); setDirty(false); },
+    assertCurrent: () => { if (changedElsewhere) throw new Error('This saved record changed while you were editing. Your draft is retained. Review the newer saved version before saving.'); } };
+}
+
+export function DraftNotice({ form }: { form: { changedElsewhere: boolean; reload: () => void } }) {
+  return form.changedElsewhere ? <div className="space-y-2"><Message error>The saved record changed while you were editing. Your draft is retained. Review the newer version before saving.</Message><button className={button} type="button" onClick={form.reload}>Discard draft and load saved version</button></div> : null;
 }
 
 const decisionLabels: Record<RecordedDecision['status'], string> = { pending: 'Pending', approved: 'Recorded approval', rejected: 'Rejected', changes_requested: 'Changes requested', not_applicable: 'Not applicable' };
@@ -88,4 +97,10 @@ export function AttachmentList({ parent, props }: { parent: { kind: ItemKind; it
     {!props.readOnly ? <Field label="Add photos or PDFs" help="JPEG, PNG, WebP, or PDF; up to 10 files, 5 MiB each. HEIC is not supported."><input className={`${control} file:mr-2 file:rounded file:border-0 file:bg-subtle file:p-2 file:text-primary`} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple disabled={action.busy} onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; if (files.length) void action.run(() => props.onAttach(parent, files), 'Files saved on this device; uploads continue in the background.'); }} /></Field> : null}
     <ActionState action={action} />
   </div>;
+}
+
+export function ArtifactDownloads({ artifact, props }: { artifact: JobItem<'artifact'>; props: WorkflowWorkspaceProps }) {
+  const action = useAction();
+  const files = props.items.filter((item): item is JobItem<'attachment'> => item.kind === 'attachment' && !item.deletedAt && artifact.payload.outputAttachmentIds.includes(item.itemId));
+  return <div className="space-y-2"><p className="text-xs text-muted">{artifact.payload.reviewState === 'final' ? 'Published' : 'Draft'} · {new Date(artifact.payload.generatedAt).toLocaleString('en-US', { timeZone: 'America/Indianapolis' })}</p>{files.length ? <div className="flex flex-wrap gap-2">{files.map(file => <button key={file.itemId} className={`${button} max-w-full break-words text-left`} disabled={action.busy || file.payload.uploadState !== 'ready'} type="button" onClick={() => void action.run(() => props.onDownload(file))}>{file.payload.filename}</button>)}</div> : <p className="text-xs text-muted">Refresh to load the published files.</p>}<ActionState action={action} /></div>;
 }

@@ -153,6 +153,7 @@ var JOB_MUTATION_HEADERS = ['MutationId', 'Actor', 'JobId', 'Target', 'Action', 
 var WORKSPACE_DRAFT_HEADERS = ['DraftId', 'Actor', 'DeviceId', 'JobId', 'Revision', 'UpdatedAt', 'UpdatedBy', 'LastMutationId', 'PayloadJson'];
 var WORKFLOW_KINDS = ['workflow', 'activity', 'selection', 'change', 'closeout', 'attachment', 'artifact'];
 var WORKFLOW_STAGES = ['intake', 'awaiting_contract', 'ready_for_production', 'in_production', 'on_hold', 'closeout', 'complete', 'cancelled'];
+var WORKFLOW_SCHEMA_READY_ = false;
 
 /** Append-only audit trail. */
 var LOG_HEADERS = ['Timestamp', 'User', 'Action', 'RecordId', 'JobNumber', 'Detail'];
@@ -1250,18 +1251,20 @@ function saveJobUnlocked_(user, jobData) {
   var sheet = jobsSheet_();
   var recordId = jobData.recordId || jobData.RecordId || Utilities.getUuid();
   jobData.recordId = recordId;
+  recoverWorkspaceTarget_('job:' + recordId);
 
   var nowIso = new Date().toISOString();
   var todayStr = nowIso.slice(0, 10);
 
   // Look up existing row
-  var data = sheet.getDataRange().getValues();
+  var data = normalizeWorkspaceCoreRows_(sheet.getDataRange().getValues());
   var targetRow = -1;
   var existingCreatedAt = todayStr;
   var revision = 1;
 
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(recordId)) {
+      if (coreJobDeleted_(data[i])) throw appError_('not_found', 'Deleted jobs cannot be overwritten.');
       targetRow = i + 1;
       existingCreatedAt = data[i][10] || todayStr;
       revision = (Number(data[i][16]) || 1) + 1;
@@ -1302,10 +1305,10 @@ function saveJobUnlocked_(user, jobData) {
   ];
 
   if (targetRow !== -1) {
-    sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
+    workspacePutCoreRow_(targetRow, rowValues);
     appendLog_(user.email, 'JOB_UPDATED', recordId, rowValues[1], 'Job updated');
   } else {
-    sheet.appendRow(rowValues);
+    workspacePutCoreRow_(null, rowValues);
     appendLog_(user.email, 'JOB_CREATED', recordId, rowValues[1], 'New job record added');
   }
 
@@ -1313,9 +1316,10 @@ function saveJobUnlocked_(user, jobData) {
 }
 
 function getJob_(user, recordId) {
+  requireWorkflowUser_(user, false);
   if (!recordId) throw appError_('bad_request', 'recordId is required.');
   var sheet = jobsSheet_();
-  var data = sheet.getDataRange().getValues();
+  var data = normalizeWorkspaceCoreRows_(sheet.getDataRange().getValues());
 
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(recordId)) {
@@ -1334,9 +1338,10 @@ function getJob_(user, recordId) {
 }
 
 function listJobs_(user, options) {
+  requireWorkflowUser_(user, false);
   options = options || {};
   var sheet = jobsSheet_();
-  var data = sheet.getDataRange().getValues();
+  var data = normalizeWorkspaceCoreRows_(sheet.getDataRange().getValues());
   var jobs = [];
 
   for (var i = 1; i < data.length; i++) {
@@ -1392,16 +1397,16 @@ function deleteJobUnlocked_(user, recordId) {
   if (!recordId) throw appError_('bad_request', 'recordId is required.');
 
   ensureWorkflowSchema_();
+  recoverWorkspaceTarget_('job:' + recordId);
   var sheet = jobsSheet_();
-  var data = sheet.getDataRange().getValues();
+  var data = normalizeWorkspaceCoreRows_(sheet.getDataRange().getValues());
 
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][0]) === String(recordId)) {
-      sheet.getRange(i + 1, 12).setValue(new Date().toISOString()); // UpdatedAt
-      sheet.getRange(i + 1, 13).setValue(user.email);             // UpdatedBy
-      sheet.getRange(i + 1, 16).setValue(true);                   // Deleted
-      sheet.getRange(i + 1, 17).setValue((Number(data[i][16]) || 1) + 1);
-      sheet.getRange(i + 1, 18).setValue('');
+      var updated = data[i].slice();
+      updated[11] = new Date().toISOString(); updated[12] = user.email;
+      updated[15] = true; updated[16] = (Number(data[i][16]) || 1) + 1; updated[17] = '';
+      workspacePutCoreRow_(i + 1, updated);
       appendLog_(user.email, 'JOB_DELETED', recordId, String(data[i][1]), 'Job soft-deleted');
       return { recordId: recordId, deleted: true };
     }
@@ -1523,6 +1528,7 @@ function getDraft_(user) {
  * ------------------------------------------------------------------------ */
 
 function ensureWorkflowSchema_(spreadsheet) {
+  if (!spreadsheet && WORKFLOW_SCHEMA_READY_) return;
   var ss = spreadsheet || getSpreadsheet_();
   var props = PropertiesService.getScriptProperties();
   ensureSheet_(ss, props.getProperty(PROP.DB_SHEET_NAME) || DEFAULTS.DB_SHEET_NAME, JOB_HEADERS);
@@ -1530,6 +1536,7 @@ function ensureWorkflowSchema_(spreadsheet) {
   ensureSheet_(ss, 'JobMutations', JOB_MUTATION_HEADERS);
   ensureSheet_(ss, 'WorkspaceDrafts', WORKSPACE_DRAFT_HEADERS);
   if (Number(props.getProperty(PROP.SCHEMA_VERSION)) < 2) props.setProperty(PROP.SCHEMA_VERSION, '2');
+  WORKFLOW_SCHEMA_READY_ = true;
 }
 
 function requireWorkflowUser_(user, write) {
@@ -1551,8 +1558,8 @@ function getCapabilities_(user) {
   return {
     apiVersion: 2, schemaVersion: 2,
     features: ['revisioned_jobs', 'job_items', 'mutation_journal', 'scoped_drafts', 'workflow_summaries', 'private_attachments', 'immutable_artifacts', 'change_numbering'],
-    revisionProtection: protectedWrites, revisionEnforcement: protectedWrites,
-    attachments: { configured: storage, maxFileBytes: 5242880, maxBatchFiles: 10, maxExportBytes: 26214400, allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] }
+    revisionProtection: protectedWrites, revisionEnforcement: protectedWrites, attachmentConfigured: storage,
+    attachments: { configured: storage, maxBytes: 5242880, maxFileBytes: 5242880, maxBatchFiles: 10, maxExportBytes: 26214400, allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] }
   };
 }
 
@@ -1567,7 +1574,7 @@ function stableWorkspaceJson_(value) {
   return '{' + Object.keys(value).sort().filter(function (key) { return value[key] !== undefined; }).map(function (key) { return JSON.stringify(key) + ':' + stableWorkspaceJson_(value[key]); }).join(',') + '}';
 }
 function workspaceDigest_(value) {
-  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value, Utilities.Charset.UTF_8);
+  var bytes = typeof value === 'string' ? Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value, Utilities.Charset.UTF_8) : Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value);
   return bytes.map(function (byte) { return ('0' + ((byte + 256) % 256).toString(16)).slice(-2); }).join('');
 }
 function workspaceMutationId_(value) { workspaceAssert_(workspaceId_(value), 'A stable mutationId is required.'); return value; }
@@ -1581,7 +1588,24 @@ function workspacePutRow_(sheet, row, values) {
   if (row) sheet.getRange(row, 1, 1, values.length).setValues([values]);
   else sheet.appendRow(values);
 }
-function coreJobRow_(id) { return workspaceRow_(jobsSheet_(), function (row) { return String(row[0]) === String(id); }); }
+function normalizeWorkspaceCoreRows_(rows) {
+  if (!rows.length) return rows;
+  var revisionColumn = rows[0].indexOf('Revision'); var mutationColumn = rows[0].indexOf('LastMutationId');
+  return rows.map(function (row, index) { return index === 0 ? row : row.slice(0, 16).concat([revisionColumn === -1 ? '' : row[revisionColumn], mutationColumn === -1 ? '' : row[mutationColumn]]); });
+}
+function workspacePutCoreRow_(rowNumber, values) {
+  var sheet = jobsSheet_(); var width = sheet.getLastColumn();
+  var headers = sheet.getRange(1, 1, 1, width).getValues()[0];
+  var physical = rowNumber ? sheet.getRange(rowNumber, 1, 1, width).getValues()[0] : new Array(width).fill('');
+  for (var i = 0; i < 16; i++) physical[i] = values[i];
+  physical[headers.indexOf('Revision')] = values[16]; physical[headers.indexOf('LastMutationId')] = values[17];
+  workspacePutRow_(sheet, rowNumber, physical);
+}
+function coreJobRow_(id) {
+  var rows = normalizeWorkspaceCoreRows_(jobsSheet_().getDataRange().getValues());
+  for (var i = 1; i < rows.length; i++) if (String(rows[i][0]) === String(id)) return { row: i + 1, values: rows[i] };
+  return null;
+}
 function coreJobDeleted_(row) { return row[15] === true || String(row[15]).toUpperCase() === 'TRUE'; }
 function attachJobMetadata_(job, row) {
   var record = cloneWorkspace_(job);
@@ -1654,7 +1678,11 @@ function commitWorkspaceIntent_(mutationId, binding, expectedRevision, intent) {
 function recoverWorkspaceJournal_(entry) {
   var intent = JSON.parse(entry.values[8]);
   var current;
-  if (intent.type === 'item') {
+  if (intent.type === 'item' || intent.type === 'upload') {
+    if (intent.type === 'upload') {
+      requireWorkspaceJob_({ email: intent.item.updatedBy, role: 'editor' }, intent.item.jobId, true);
+      if (!workspaceExistingDriveFile_(intent.item.payload, true)) throw appError_('busy', 'A file transfer is still pending. Retry the original upload.');
+    }
     current = readWorkspaceItemRow_(intent.item.jobId, intent.item.kind, intent.item.itemId);
     if (!current || String(current.values[9]) !== intent.mutationId) {
       var liveRevision = current ? Number(current.values[3]) : 0;
@@ -1666,7 +1694,7 @@ function recoverWorkspaceJournal_(entry) {
     if (!current || String(current.values[17]) !== intent.mutationId) {
       var coreRevision = current ? Number(current.values[16]) || 1 : 0;
       if (coreRevision !== Number(entry.values[6])) workspaceConflict_(current && attachJobMetadata_(JSON.parse(current.values[14]), current.values));
-      workspacePutRow_(jobsSheet_(), current && current.row, workspaceCoreValues_(intent.record, intent.createdAt, intent.updatedAt, intent.actor, intent.deleted, intent.revision, intent.mutationId));
+      workspacePutCoreRow_(current && current.row, workspaceCoreValues_(intent.record, intent.createdAt, intent.updatedAt, intent.actor, intent.deleted, intent.revision, intent.mutationId));
     }
   } else if (intent.type === 'draft') {
     var draftSheet = workflowTable_('WorkspaceDrafts');
@@ -1678,7 +1706,7 @@ function recoverWorkspaceJournal_(entry) {
   }
   SpreadsheetApp.flush();
   repairWorkspaceEvent_(intent);
-  var result = intent.type === 'item' ? { item: intent.item, mutationId: intent.mutationId } : intent.type === 'draft' ? intent.draft : intent.deleted ? { recordId: intent.record.recordId, deleted: true, revision: intent.revision, updatedAt: intent.updatedAt, mutationId: intent.mutationId } : intent.record;
+  var result = intent.type === 'item' || intent.type === 'upload' ? { item: intent.item, mutationId: intent.mutationId } : intent.type === 'draft' ? intent.draft : intent.deleted ? { recordId: intent.record.recordId, deleted: true, revision: intent.revision, updatedAt: intent.updatedAt, mutationId: intent.mutationId } : intent.record;
   var values = entry.values.slice(); values[7] = 'applied'; values[9] = JSON.stringify(result); values[11] = new Date().toISOString();
   workflowTable_('JobMutations').getRange(entry.row, 1, 1, values.length).setValues([values]);
   return result;
@@ -1825,6 +1853,7 @@ function mutateJobItem_(user, request) {
     if (kind === 'workflow' || kind === 'closeout') workspaceAssert_(id === kind + ':' + jobId, 'Singleton records use ' + kind + ':<jobId>.');
     if (kind === 'activity' && current) workspaceAssert_(current.payload.source === 'manual' && (current.createdBy === user.email || user.role === 'admin'), 'Only the author or an administrator may correct a manual update.', 'forbidden');
     if (kind === 'artifact' && current && current.payload.reviewState === 'final') throw appError_('immutable_artifact', 'Published document versions cannot be edited or removed.');
+    if (operation !== 'delete') workspaceAssert_(workspaceObject_(request.payload), 'A complete supporting payload is required.');
     var payload = operation === 'delete' ? cloneWorkspace_(current.payload) : cloneWorkspace_(request.payload);
     if (operation !== 'delete') {
       validateWorkspacePayload_(kind, payload);
@@ -1837,16 +1866,24 @@ function mutateJobItem_(user, request) {
         ['filename', 'mimeType', 'byteSize', 'sha256', 'driveFileId', 'parent', 'uploadState', 'driveFolderId'].forEach(function (key) { workspaceAssert_(stableWorkspaceJson_(current.payload[key]) === stableWorkspaceJson_(payload[key]), 'Attachment storage metadata is server controlled.', 'forbidden'); });
       }
       if (kind === 'artifact') { payload.generatedBy = current ? current.payload.generatedBy : user.email; payload.generatedAt = current ? current.payload.generatedAt : new Date().toISOString(); }
+      if (kind === 'workflow' && current && (current.payload.contractBaseAmountCents !== payload.contractBaseAmountCents || current.payload.openingPreviousChangesCents !== payload.openingPreviousChangesCents || (current.payload.baselineReviewed && !payload.baselineReviewed))) {
+        workspaceAssert_(!workspaceItemsForJob_(jobId).some(function (entry) { return entry.kind === 'change' && !entry.payload.legacy && entry.payload.number; }), 'The reviewed contract baseline is frozen after a change is issued.', 'immutable_baseline');
+      }
       if (kind === 'change') {
+        if (current && current.payload.number) workspaceAssert_(payload.number === current.payload.number, 'An assigned change number cannot be changed.');
+        else if (!payload.legacy) workspaceAssert_(!payload.number, 'New display numbers are assigned by the server.');
         if (current && current.payload.number && current.payload.documentArtifactId) {
           ['number', 'scope', 'amountCents', 'addedDays', 'insuranceRelated', 'documentArtifactId'].forEach(function (key) { workspaceAssert_(stableWorkspaceJson_(current.payload[key]) === stableWorkspaceJson_(payload[key]), 'Issued changes require an amendment for content edits.', 'immutable_artifact'); });
         }
-        if (!current || !current.payload.legacy) workspaceAssert_(!payload.legacy, 'Legacy snapshots can only be imported using a legacy:<jobId> ID.', 'forbidden');
+        if ((!current || !current.payload.legacy) && id !== 'legacy:' + jobId) workspaceAssert_(!payload.legacy, 'Legacy snapshots can only be imported using a legacy:<jobId> ID.', 'forbidden');
         if (id === 'legacy:' + jobId && !current) {
           var legacyJob = JSON.parse(coreJobRow_(jobId).values[14]);
           workspaceAssert_(payload.legacy && stableWorkspaceJson_(payload.legacy) === stableWorkspaceJson_(legacyJob.changeOrder), 'Legacy snapshots must preserve the original change fields.');
+          workspaceAssert_(payload.customerDecision.status === 'pending' && ['pending', 'not_applicable'].indexOf(payload.carrierDecision.status) !== -1, 'Imported legacy decisions must remain pending.');
         }
         if (payload.lifecycle !== 'draft' && !payload.number && !payload.legacy) {
+          var baseline = workspaceItem_(jobId, 'workflow', 'workflow:' + jobId, true);
+          workspaceAssert_(baseline && baseline.payload.baselineReviewed && baseline.payload.contractBaseAmountCents !== null, 'Review the contract base and brought-forward changes before issuing a change.', 'dependency_pending');
           recoverWorkspaceJobChanges_(jobId);
           var changes = workspaceItemsForJob_(jobId).filter(function (item) { return item.kind === 'change'; });
           var maximum = changes.reduce(function (max, item) { var n = /^CO-(\d+)$/.exec(item.payload.number || ''); return n ? Math.max(max, Number(n[1])) : max; }, 0);
@@ -1929,6 +1966,143 @@ function listWorkspaceDrafts_(user, request) {
   for (var i = 1; i < rows.length; i++) if (rows[i][1] === user.email.toLowerCase() && rows[i][2] === request.deviceId) drafts.push(workspaceDraftFromRow_(rows[i]));
   var page = workspacePage_(drafts, user.email.toLowerCase() + ':' + request.deviceId, request, function (draft) { return draft.draftId; });
   return { drafts: page.items, nextCursor: page.nextCursor, serverTime: page.serverTime };
+}
+
+/* Private, reserved Drive files. No sharing or public-link operation is used. */
+function requireWorkspaceStorage_() {
+  var root = PropertiesService.getScriptProperties().getProperty(PROP.WORKFLOW_DRIVE_ROOT_ID);
+  if (!root || typeof Drive === 'undefined' || !Drive.Files || !Drive.Permissions) throw appError_('not_configured', 'Private file storage needs WORKFLOW_DRIVE_ROOT_ID and the Advanced Drive v3 service.');
+  var pageToken;
+  do {
+    var page = Drive.Permissions.list(root, { fields: 'nextPageToken,permissions(type,role)', pageSize: 100, pageToken: pageToken, supportsAllDrives: true });
+    workspaceAssert_(!(page.permissions || []).some(function (permission) { return permission.type === 'anyone' || permission.type === 'domain'; }), 'The configured upload folder must be private.', 'storage_not_private');
+    pageToken = page.nextPageToken;
+  } while (pageToken);
+  return root;
+}
+function workspaceJobFolder_(jobId, root) {
+  var name = 'job-' + workspaceDigest_(jobId).slice(0, 32);
+  var parent = DriveApp.getFolderById(root); var folders = parent.getFoldersByName(name);
+  return folders.hasNext() ? folders.next().getId() : parent.createFolder(name).getId();
+}
+function safeWorkspaceFilename_(filename) {
+  workspaceAssert_(workspaceText_(filename, 255) && !!filename.trim() && !/[\x00-\x1f\x7f\/\\]/.test(filename) && filename !== '.' && filename !== '..' && !/^[=+@]/.test(filename), 'Use a safe filename without paths or control characters.');
+  return filename.trim();
+}
+function reserveJobAttachment_(user, request) {
+  return withWriteLock_(function () {
+    requireWorkflowUser_(user, true); requireWorkspaceJob_(user, request.jobId, true);
+    workspaceAssert_(workspaceId_(request.attachmentId) && workspaceObject_(request.parent) && WORKFLOW_KINDS.indexOf(request.parent.kind) !== -1 && ['attachment'].indexOf(request.parent.kind) === -1 && workspaceId_(request.parent.itemId), 'A valid attachment ID and parent record are required.');
+    workspaceMutationId_(request.mutationId);
+    var root = requireWorkspaceStorage_();
+    var filename = safeWorkspaceFilename_(request.filename);
+    var allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    if (request.parent.kind === 'artifact') allowed.push('application/json');
+    workspaceAssert_(allowed.indexOf(request.mimeType) !== -1, 'Choose a JPEG, PNG, WebP or PDF file. HEIC must be converted before upload.', 'unsupported_file_type');
+    workspaceAssert_(Number.isSafeInteger(request.byteSize) && request.byteSize > 0, 'The file must have a valid byte size.');
+    workspaceAssert_(request.byteSize <= 5242880, 'Each file must be 5 MiB or smaller.', 'file_too_large');
+    workspaceAssert_(typeof request.sha256 === 'string' && /^[a-f0-9]{64}$/.test(request.sha256), 'A SHA-256 hash is required.');
+    var parent = workspaceItem_(request.jobId, request.parent.kind, request.parent.itemId);
+    workspaceAssert_(parent.kind !== 'artifact' || parent.payload.reviewState !== 'final', 'Published artifact files cannot be replaced.', 'immutable_artifact');
+    var target = 'item:' + request.jobId + ':attachment:' + request.attachmentId;
+    var metadata = { parent: request.parent, filename: filename, mimeType: request.mimeType, byteSize: request.byteSize, sha256: request.sha256, caption: request.caption || '', category: request.category || '' };
+    var binding = journalBinding_(user, request.jobId, target, 'reserveJobAttachment', metadata);
+    var replay = journalReplay_(request.mutationId, binding); if (replay) return replay.result;
+    recoverWorkspaceTarget_(target);
+    var current = workspaceItem_(request.jobId, 'attachment', request.attachmentId, true);
+    if (current) workspaceConflict_(current);
+    var ids = Drive.Files.generateIds({ count: 1, space: 'drive', type: 'files' });
+    workspaceAssert_(ids && ids.ids && ids.ids[0], 'Drive could not reserve a stable file ID.', 'storage_error');
+    var payload = { filename: filename, mimeType: request.mimeType, byteSize: request.byteSize, sha256: request.sha256, driveFileId: ids.ids[0], parent: cloneWorkspace_(request.parent), uploadState: 'reserved', driveFolderId: workspaceJobFolder_(request.jobId, root) };
+    if (request.caption) payload.caption = request.caption;
+    if (request.category) payload.category = request.category;
+    validateWorkspacePayload_('attachment', payload);
+    var now = new Date().toISOString();
+    var item = { jobId: request.jobId, kind: 'attachment', itemId: request.attachmentId, revision: 1, createdAt: now, createdBy: user.email, updatedAt: now, updatedBy: user.email, deletedAt: null, lastMutationId: request.mutationId, payload: payload };
+    return commitWorkspaceIntent_(request.mutationId, binding, 0, { type: 'item', item: item, operation: 'create' });
+  });
+}
+function workspaceBytesMatch_(bytes, metadata) {
+  workspaceAssert_(bytes.length === metadata.byteSize && bytes.length <= 5242880 && workspaceDigest_(bytes) === metadata.sha256, 'The uploaded bytes do not match the reserved size and SHA-256.', 'invalid_file');
+  var unsigned = bytes.slice(0, 16).map(function (byte) { return (byte + 256) % 256; });
+  var ascii = unsigned.map(function (byte) { return String.fromCharCode(byte); }).join('');
+  var valid = metadata.mimeType === 'application/pdf' ? ascii.indexOf('%PDF-') === 0 : metadata.mimeType === 'image/jpeg' ? unsigned[0] === 255 && unsigned[1] === 216 && unsigned[2] === 255 : metadata.mimeType === 'image/png' ? unsigned.slice(0, 8).join(',') === '137,80,78,71,13,10,26,10' : metadata.mimeType === 'image/webp' ? ascii.slice(0, 4) === 'RIFF' && ascii.slice(8, 12) === 'WEBP' : false;
+  if (metadata.mimeType === 'application/json' && metadata.parent.kind === 'artifact') {
+    try { var value = JSON.parse(Utilities.newBlob(bytes).getDataAsString('UTF-8')); valid = workspaceObject_(value); } catch (err) { valid = false; }
+  }
+  workspaceAssert_(valid, 'The file signature does not match its declared type.', 'invalid_file');
+}
+function workspaceExistingDriveFile_(metadata, metadataOnly) {
+  var file;
+  try { file = Drive.Files.get(metadata.driveFileId, { fields: 'id,name,mimeType,size,parents,trashed,sha256Checksum', supportsAllDrives: true }); }
+  catch (err) { if (/not[ -]?found|404|file not found/i.test(String(err && err.message || err))) return null; throw err; }
+  workspaceAssert_(file && !file.trashed && file.mimeType === metadata.mimeType && Number(file.size) === metadata.byteSize && (file.parents || []).indexOf(metadata.driveFolderId) !== -1, 'The staged Drive file does not match its reservation.', 'invalid_file');
+  if (metadataOnly) {
+    // Drive's output-only blob checksum verifies the staged file without a
+    // byte download while the script-wide commit lock is held.
+    workspaceAssert_(!!file.sha256Checksum, 'Drive is still verifying the file. Retry the original upload.', 'busy');
+    workspaceAssert_(String(file.sha256Checksum).toLowerCase() === metadata.sha256, 'The staged file checksum does not match its reservation.', 'invalid_file');
+    return true;
+  }
+  var bytes = DriveApp.getFileById(metadata.driveFileId).getBlob().getBytes();
+  workspaceBytesMatch_(bytes, metadata);
+  return bytes;
+}
+function uploadJobAttachment_(user, request) {
+  requireWorkflowUser_(user, true); requireWorkspaceJob_(user, request.jobId, true);
+  workspaceAssert_(workspaceId_(request.attachmentId), 'attachmentId is required.'); workspaceMutationId_(request.mutationId);
+  var base64 = request.base64 || request.bytesBase64;
+  workspaceAssert_(typeof base64 === 'string' && base64.length <= 6990508 && base64.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(base64), 'Provide valid base64 file bytes.', 'invalid_file');
+  var bytes;
+  try { bytes = Utilities.base64Decode(base64); } catch (err) { throw appError_('invalid_file', 'File bytes could not be decoded.'); }
+  var reservation = workspaceItem_(request.jobId, 'attachment', request.attachmentId);
+  workspaceBytesMatch_(bytes, reservation.payload);
+  requireWorkspaceStorage_();
+  var target = 'item:' + request.jobId + ':attachment:' + request.attachmentId;
+  var binding = journalBinding_(user, request.jobId, target, 'uploadJobAttachment', { attachmentId: request.attachmentId, sha256: reservation.payload.sha256, byteSize: reservation.payload.byteSize });
+  var staged = withWriteLock_(function () {
+    requireWorkspaceJob_(user, request.jobId, true);
+    var sheet = workflowTable_('JobMutations');
+    var entry = workspaceRow_(sheet, function (row) { return row[0] === request.mutationId; });
+    if (entry) {
+      var row = entry.values;
+      workspaceAssert_(row[1] === binding.actor && row[2] === binding.jobId && row[3] === binding.target && row[4] === binding.action && row[5] === binding.hash, 'This mutationId is bound to another request.', 'idempotency_conflict');
+      if (row[7] === 'applied') return { result: JSON.parse(row[9]) };
+      return { entry: entry, intent: JSON.parse(row[8]) };
+    }
+    recoverWorkspaceTarget_(target);
+    var current = workspaceItem_(request.jobId, 'attachment', request.attachmentId);
+    var item = cloneWorkspace_(current); item.revision++; item.updatedAt = new Date().toISOString(); item.updatedBy = user.email; item.lastMutationId = request.mutationId; item.payload.uploadState = 'ready';
+    var intent = { type: 'upload', item: item, operation: 'update', mutationId: request.mutationId };
+    var now = new Date().toISOString();
+    var values = [request.mutationId, binding.actor, request.jobId, target, binding.action, binding.hash, current.revision, 'transferring', JSON.stringify(intent), '', now, now];
+    sheet.appendRow(values); SpreadsheetApp.flush();
+    return { entry: { row: sheet.getLastRow(), values: values }, intent: intent };
+  });
+  if (staged.result) return staged.result;
+  // Transfer happens outside the script lock. The reservation and transfer
+  // journal survive a timeout; a retry verifies this exact Drive ID first.
+  if (!workspaceExistingDriveFile_(staged.intent.item.payload)) {
+    var p = staged.intent.item.payload;
+    try {
+      Drive.Files.create({ id: p.driveFileId, name: p.filename, mimeType: p.mimeType, parents: [p.driveFolderId] }, Utilities.newBlob(bytes, p.mimeType, p.filename), { fields: 'id', supportsAllDrives: true });
+    } catch (err) {
+      if (!/already exists|409|conflict/i.test(String(err && err.message || err)) || !workspaceExistingDriveFile_(p)) throw err;
+    }
+  }
+  return withWriteLock_(function () {
+    requireWorkspaceJob_(user, request.jobId, true);
+    var replay = journalReplay_(request.mutationId, binding);
+    return replay.result;
+  });
+}
+function getJobAttachment_(user, request) {
+  requireWorkspaceJob_(user, request.jobId, false); workspaceAssert_(workspaceId_(request.attachmentId), 'attachmentId is required.');
+  var item = workspaceItem_(request.jobId, 'attachment', request.attachmentId);
+  workspaceAssert_(item.payload.uploadState === 'ready', 'The file is still waiting to upload.', 'dependency_pending');
+  var bytes = workspaceExistingDriveFile_(item.payload);
+  workspaceAssert_(!!bytes, 'The stored file is unavailable. Your file selection has been retained.', 'file_unavailable');
+  return { item: item, filename: item.payload.filename, mimeType: item.payload.mimeType, byteSize: item.payload.byteSize, base64: Utilities.base64Encode(bytes) };
 }
 
 /* ---------------------------------------------------------------------------

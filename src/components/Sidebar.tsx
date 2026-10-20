@@ -26,6 +26,7 @@ export type WorkspaceTab =
   | 'changeOrder'
   | 'checklist'
   | 'productionNotes'
+  | 'updates' | 'handoff' | 'selections' | 'closeout'
   | 'documents';
 
 export interface WorkspaceSection {
@@ -44,6 +45,10 @@ export const WORKSPACE_SECTIONS: WorkspaceSection[] = [
   { id: 'financials', label: 'Financials', icon: Coins, group: 'Job details' },
   { id: 'mortgage', label: 'Mortgage', icon: Landmark, group: 'Job details' },
   { id: 'team', label: 'Team', icon: Users2, group: 'Production' },
+  { id: 'updates', label: 'Updates', icon: StickyNote, group: 'Production' },
+  { id: 'handoff', label: 'Handoff', icon: FileCheck, group: 'Production' },
+  { id: 'selections', label: 'Selections', icon: CheckCircle, group: 'Production' },
+  { id: 'closeout', label: 'Closeout', icon: FileCheck, group: 'Production' },
   { id: 'productionNotes', label: 'Production Notes', icon: StickyNote, group: 'Production' },
   { id: 'checklist', label: 'Checklist', icon: CheckCircle, group: 'Production' },
   { id: 'changeOrder', label: 'Change Order', icon: FileEdit, group: 'Production' },
@@ -55,22 +60,23 @@ interface WorkspaceNavigationProps {
   onNavigate: (tab: WorkspaceTab) => void;
   missingFieldCounts?: Partial<Record<WorkspaceTab, number>>;
   showMissingWarnings: boolean;
+  workflowEnabled?: boolean;
 }
 
 const DESTINATIONS = [
   { id: 'home', label: 'Home', icon: Home, sections: ['home'] },
   { id: 'intake', label: 'Intake', icon: FileInput, sections: ['intake'] },
   { id: 'customer', label: 'Job details', icon: UserCircle, sections: ['customer', 'insurance', 'financials', 'mortgage'] },
-  { id: 'team', label: 'Production', icon: CheckCircle, sections: ['team', 'productionNotes', 'checklist', 'changeOrder'] },
+  { id: 'team', label: 'Production', icon: CheckCircle, sections: ['team', 'updates', 'handoff', 'selections', 'closeout', 'productionNotes', 'checklist', 'changeOrder'] },
   { id: 'documents', label: 'Documents', icon: FileCheck, sections: ['documents'] },
 ] as const;
 
 /** Five stable destinations; each workspace exposes only its own sections. */
 export const WorkspaceNavigation: React.FC<WorkspaceNavigationProps> = ({
-  activeTab, onNavigate, missingFieldCounts, showMissingWarnings,
+  activeTab, onNavigate, missingFieldCounts, showMissingWarnings, workflowEnabled = false,
 }) => {
   const activeDestination = DESTINATIONS.find((item) => (item.sections as readonly string[]).includes(activeTab))!;
-  const sections = WORKSPACE_SECTIONS.filter((section) => (activeDestination.sections as readonly string[]).includes(section.id));
+  const sections = WORKSPACE_SECTIONS.filter((section) => (activeDestination.sections as readonly string[]).includes(section.id) && (workflowEnabled || !['updates', 'handoff', 'selections', 'closeout'].includes(section.id)));
 
   return (
     <div className="mb-5 sm:mb-6">
@@ -93,7 +99,9 @@ export const WorkspaceNavigation: React.FC<WorkspaceNavigationProps> = ({
         })}
       </nav>
       {sections.length > 1 && (
-        <nav aria-label={`${activeDestination.label} sections`} className="mt-3 grid grid-cols-2 gap-1 rounded-xl border border-line bg-surface p-1 sm:flex sm:flex-wrap sm:w-fit">
+        <>
+        {activeDestination.label === 'Production' && workflowEnabled ? <label className="mt-3 block text-sm font-medium text-body sm:hidden">Production section<select className="mt-1 min-h-11 w-full rounded-lg border border-line-strong bg-surface px-3 text-primary" value={activeTab} onChange={event => onNavigate(event.target.value as WorkspaceTab)}>{sections.map(section => <option key={section.id} value={section.id}>{section.label}</option>)}</select></label> : null}
+        <nav aria-label={`${activeDestination.label} sections`} className={`mt-3 gap-1 rounded-xl border border-line bg-surface p-1 sm:flex sm:flex-wrap sm:w-fit ${activeDestination.label === 'Production' && workflowEnabled ? 'hidden' : 'grid grid-cols-2'}`}>
           {sections.map((section) => {
             const Icon = section.icon;
             const missing = showMissingWarnings ? missingFieldCounts?.[section.id] ?? 0 : 0;
@@ -108,6 +116,7 @@ export const WorkspaceNavigation: React.FC<WorkspaceNavigationProps> = ({
             );
           })}
         </nav>
+        </>
       )}
     </div>
   );

@@ -12,8 +12,11 @@ import {
   X,
 } from 'lucide-react';
 import type { SyncJobSummary } from '../services/localDb';
+import type { WorkflowSummary } from './WorkflowOverview';
+import { STAGE_LABELS } from '../types/workflow';
 
 interface SavedCustomersPageProps {
+  workflowSummaries?: Record<string, WorkflowSummary>;
   jobs: SyncJobSummary[];
   isLoading: boolean;
   error: string | null;
@@ -75,6 +78,7 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
   onOpenJob,
   onDeleteJob,
   onNewJob,
+  workflowSummaries,
 }) => {
   const [sort, setSort] = useState<JobSort>('recent');
   const query = search.trim().toLowerCase();
@@ -287,7 +291,7 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
                               STATUS_STYLES[job.status] ?? 'bg-subtle text-body border-line'
                             }`}
                           >
-                            {job.status}
+                            {workflowSummaries?.[job.recordId] ? STAGE_LABELS[workflowSummaries[job.recordId].stage] : job.status}
                           </span>
                         )}
                         {job.syncState === 'pending-save' && (
@@ -307,6 +311,7 @@ export const SavedCustomersPage: React.FC<SavedCustomersPageProps> = ({
                       {job.jobName && (
                         <p className="mt-1 text-sm font-medium text-body break-words">{job.jobName}</p>
                       )}
+                      {workflowSummaries?.[job.recordId]?.nextAction && !workflowSummaries[job.recordId].nextAction?.completedAt ? <p className="mt-1 break-words text-sm text-body">Next: {workflowSummaries[job.recordId].nextAction?.title} · {workflowSummaries[job.recordId].nextAction?.responsiblePerson.name}{workflowSummaries[job.recordId].nextAction?.dueDate ? ` · ${workflowSummaries[job.recordId].nextAction?.dueDate}` : ''}</p> : null}
                       <p className="mt-1 text-sm text-secondary break-words">
                         {job.lossAddress || 'No loss address'}
                         {job.carrier ? ` • ${job.carrier}` : ''}

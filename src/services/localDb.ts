@@ -276,11 +276,12 @@ export async function persistDraftAndOutbox(draft: WorkspaceDraft, owner?: strin
     const tx = db.transaction([DRAFTS, OUTBOX], 'readwrite');
     const stored = { ...draft, id: draftKey(owner), owner };
     tx.objectStore(DRAFTS).put(stored);
+    if (owner && stored.recordId) tx.objectStore(DRAFTS).put({ ...stored, id: `workspace:${owner}:${stored.recordId}` });
     const outbox = tx.objectStore(OUTBOX);
     const request = outbox.getAll();
     request.onsuccess = () => {
       for (const op of request.result as OutboxOp[]) {
-        if (op.type === 'draft' && op.owner === owner) outbox.delete(op.id!);
+        if (op.type === 'draft' && op.owner === owner && op.recordId === (draft.recordId ?? draft.job.recordId ?? '') && !op.dispatched) outbox.delete(op.id!);
       }
       // Allocate a new ID: an older response cannot remove the newer payload.
       outbox.add({ type: 'draft', recordId: draft.recordId ?? draft.job.recordId ?? '',

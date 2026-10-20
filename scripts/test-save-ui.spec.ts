@@ -32,6 +32,8 @@ async function start(page: Page, handler: (route: Route, body: any) => Promise<v
     const body = route.request().postDataJSON();
     if (body.action === 'checkSession') await ok(route, { user });
     else if (body.action === 'listJobs') await ok(route, savedJobs);
+    // This suite exercises the legacy backend. Model its explicit unsupported-action response.
+    else if (body.action === 'getCapabilities') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: false, code: 'unknown_action', error: 'Legacy backend' }) });
     else await handler(route, body);
   });
   await page.goto('/');

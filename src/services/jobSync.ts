@@ -42,6 +42,8 @@ import {
   cacheServerMirrorJob,
   deleteSyncedMirrorJob,
   cacheServerDraft,
+  deleteOutboxOp,
+  putMirrorJob,
   type MirrorJob,
   type OutboxOp,
   type SyncJobSummary,
@@ -51,6 +53,7 @@ import { createRecordId, type RestorationJobData } from '../types/jobData';
 import { requestOutboxSync } from './pwa';
 import { workflowAvailable, deviceId } from './workflowCapabilities';
 import { callAuthenticatedAppsScript } from './appsScriptService';
+import { discoverWorkflowCapabilities } from './workflowClient';
 interface ServerScopedDraft { job: RestorationJobData; recordId: string; revision: number; updatedAt: string; updatedBy: string }
 interface ServerScopedDrafts { drafts: ServerScopedDraft[] }
 
@@ -144,6 +147,30 @@ export function subscribeSyncState(listener: (next: SyncState) => void): () => v
 
 export function getSyncState(): SyncState {
   return state;
+}
+
+export async function getCoreConflicts(): Promise<OutboxOp[]> {
+  const owner = currentOwner();
+  return (await getOutboxOps()).filter(op => op.blocked && op.conflictRecord && outboxOpIsMine(op, owner));
+}
+export async function resolveCoreConflict(recordId: string, choice: 'local' | 'server'): Promise<RestorationJobData | undefined> {
+  const owner = currentOwner();
+  const ops = (await getOutboxOps()).filter(op => op.recordId === recordId && op.type !== 'draft' && outboxOpIsMine(op, owner));
+  const conflict = ops.find(op => op.blocked && op.conflictRecord);
+  if (!conflict?.conflictRecord) return;
+  const server = conflict.conflictRecord;
+  const mirror = await getMirrorJob(recordId);
+  // Commit the reviewed replacement before removing the old intents.
+  if (choice === 'local' && mirror?.record) {
+    await saveJobOffline({ ...mirror.record, revision: server.revision });
+  } else {
+    await putMirrorJob({ recordId, summary: summaryFromRecord(server), record: server, syncState: 'synced', baseUpdatedAt: server.updatedAt || null, locallyUpdatedAt: new Date().toISOString() });
+  }
+  for (const op of ops) if (op.id !== undefined) await deleteOutboxOp(op.id);
+  patchState({ errorCode: null, lastError: null, conflictNotice: null });
+  await refreshPendingState();
+  await flushOutboxNow(false);
+  return choice === 'server' ? server : mirror?.record ?? undefined;
 }
 
 let conflictTimer: number | null = null;
@@ -760,7 +787,7 @@ export function initJobSync(): () => void {
   window.addEventListener('pagehide', onPageHide);
   window.addEventListener('beforeunload', onBeforeUnload);
   void refreshPendingState().catch(reportDraftError);
-  void flushOutboxNow(false);
+  void discoverWorkflowCapabilities().finally(() => { void flushOutboxNow(false); });
 
   return () => {
     initialized = false;
@@ -913,6 +940,7 @@ export async function restoreDraft(onLocal?: (draft: RestoredDraft) => void): Pr
 
   try {
     const auth = await acquireAuthContext();
+    await discoverWorkflowCapabilities();
     const server = workflowAvailable()
       ? (await callAuthenticatedAppsScript<ServerScopedDrafts>('listWorkspaceDrafts', { deviceId: deviceId() })).drafts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null
       : await fetchDraft(auth);
@@ -960,7 +988,10 @@ export async function restoreDraft(onLocal?: (draft: RestoredDraft) => void): Pr
       origin: restored === mirrored ? 'server' : 'local',
     };
   } catch (err) {
-    if (isDraftReadMiss(err)) return localResult;
+    if (isDraftReadMiss(err)) {
+      const latest = await safeGetDraft();
+      return latest ? { job: latest.job, recordId: latest.recordId, updatedBy: latest.updatedBy, origin: 'local' } : localResult;
+    }
     throw err;
   }
 }

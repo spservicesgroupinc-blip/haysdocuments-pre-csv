@@ -80,7 +80,11 @@ export async function cacheWorkflowItems(owner: string, items: JobItem[]): Promi
       for (const item of items) {
         if (pending.some(op => op.owner === owner && op.jobId === item.jobId && op.itemId === item.itemId)) continue;
         const key = itemKey(owner, item.jobId, item.itemId);
-        tx.objectStore(ITEMS).put({ key, owner, jobId: item.jobId, item, base: item });
+        const existing = tx.objectStore(ITEMS).get(key);
+        existing.onsuccess = () => {
+          const prior = existing.result as CachedItem | undefined;
+          if (!prior || (prior.base?.revision ?? 0) <= item.revision) tx.objectStore(ITEMS).put({ key, owner, jobId: item.jobId, item, base: item });
+        };
       }
     };
   });

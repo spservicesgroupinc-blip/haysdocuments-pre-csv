@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { deflateSync } from 'node:zlib';
+import { chromium } from '@playwright/test';
+import { build } from 'esbuild';
 import { PDFDocument } from 'pdf-lib';
 import JSZip from 'jszip';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.js';
@@ -9,6 +14,12 @@ import {
   createCloseoutExport, buildRegisteredChangeOrderData, generateRegisteredChangeOrder,
 } from '../src/services/workflowDocuments';
 import { base64ToBlob, blobToBase64, prepareAttachment } from '../src/services/workflowAttachments';
+
+function qaFile(name: string, bytes: Uint8Array) {
+  if (!process.env.WORKFLOW_PDF_QA_DIR) return;
+  mkdirSync(process.env.WORKFLOW_PDF_QA_DIR, { recursive: true });
+  writeFileSync(join(process.env.WORKFLOW_PDF_QA_DIR, name), bytes);
+}
 
 const job = () => {
   const value = createEmptyJob();
@@ -73,6 +84,7 @@ test('handoff snapshot is detached, frozen, internally labeled and retains missi
   assert.equal(JSON.stringify(snapshot), original);
   assert.match(original, /PRIVATE-LOCKBOX-4821/);
   const pdf = await readPdf(await generateWorkflowSummary(snapshot));
+  qaFile('handoff.pdf', await generateWorkflowSummary(snapshot));
   assert.match(pdf.text, /Internal use/);
   assert.match(pdf.text, /Not recorded/);
 });
@@ -84,24 +96,30 @@ test('external closeout snapshot uses an allowlist and excludes private source d
     })] as never, audience);
     assert.doesNotMatch(JSON.stringify(snapshot), /PRIVATE-|mortgage|downPayment|communicationNotes/);
     const pdf = await readPdf(await generateWorkflowSummary(snapshot));
+    qaFile(`${audience}-completion.pdf`, await generateWorkflowSummary(snapshot));
     assert.match(pdf.text, /Example Customer/);
     assert.doesNotMatch(pdf.text, /PRIVATE-/);
   }
 });
 
 test('source manifests are stable regardless of item order and include revisions without generated artifacts', () => {
-  const items = [item('selection', 'b', { room: '', item: 'Floor', specification: '', neededBy: '', decision: decision('pending') }), item('workflow', 'a', workflow()), item('artifact', 'ignored', {})];
+  const items = [item('selection', 'b', { room: '', item: 'Floor', specification: '', neededBy: '', decision: decision('pending') }), item('workflow', 'a', workflow()), item('artifact', 'ignored', {}),
+    item('attachment', 'generated-output', { parent: { kind: 'artifact', itemId: 'ignored' } })];
   const first = buildHandoffSnapshot(job(), items as never);
   const second = buildHandoffSnapshot(job(), [...items].reverse() as never);
   assert.deepEqual(first.sourceManifest, second.sourceManifest);
   assert.doesNotMatch(JSON.stringify(first.sourceManifest), /ignored/);
+  assert.doesNotMatch(JSON.stringify(first.sourceManifest), /generated-output/);
 });
 
 test('long content, unbroken words, unicode, and page transitions render every tail without clipping', async () => {
   const data = job();
   data.productionNotes.scopeSummary = Array.from({ length: 80 }, (_, i) => `Room ${i}: restore ceiling and walls.`).join('\n');
   data.productionNotes.additionalNotes = `BEGIN-LONG-WORD ${'W'.repeat(1200)} END-LONG-WORD 😃`;
-  const result = await readPdf(await generateWorkflowSummary(buildHandoffSnapshot(data, [])));
+  data.customer.jobNumber = `FW-${'W'.repeat(160)}`;
+  const bytes = await generateWorkflowSummary(buildHandoffSnapshot(data, []));
+  qaFile('long-handoff.pdf', bytes);
+  const result = await readPdf(bytes);
   assert.ok(result.pages >= 3);
   assert.match(result.text, /Room 79/);
   assert.match(result.text, /END-LONG-WORD/);
@@ -122,10 +140,23 @@ test('change adapter counts exact signed cents once, independent of carrier deci
     { ...workflow(), contractBaseAmountCents: null } as never, []), /baseline/i);
 });
 
+test('issued changes preserve the original form and append complete long scope without clipped words or draft labels', async () => {
+  const source = change('CO-05', 100);
+  const selected = { ...source, payload: { ...source.payload as object,
+    scope: `Repair additional damage. ${'W'.repeat(1000)} COMPLETE-SCOPE-END`, lifecycle: 'submitted' } };
+  const bytes = await generateRegisteredChangeOrder(job(), selected as never, workflow() as never, []);
+  qaFile('registered-change-long.pdf', bytes);
+  const rendered = await readPdf(bytes);
+  assert.ok(rendered.pages >= 2);
+  assert.match(rendered.text, /Change Order \/ Addendum/);
+  assert.match(rendered.text, /COMPLETE-SCOPE-END/);
+  assert.doesNotMatch(rendered.text, /PRODUCTION HANDOFF|DRAFT/);
+});
+
 async function pdfAttachment(id = 'evidence') {
   const pdf = await PDFDocument.create(); pdf.addPage();
   const bytes = await pdf.save();
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', Uint8Array.from(bytes).buffer));
   const sha256 = Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
   return { attachment: item('attachment', id, { filename: '../invoice.pdf', mimeType: 'application/pdf',
     byteSize: bytes.length, sha256, driveFileId: `drive-${id}`, parent: { kind: 'closeout', itemId: 'closeout:export-job' },
@@ -163,7 +194,7 @@ test('exports reject unavailable, mismatched and duplicate selected files and si
 
 test('PDF attachment preparation preserves bytes, sanitizes name and returns a verified hash', async () => {
   const source = await pdfAttachment();
-  const file = new File([source.bytes], '../invoice.pdf', { type: 'application/pdf' });
+  const file = new File([Uint8Array.from(source.bytes).buffer], '../invoice.pdf', { type: 'application/pdf' });
   const prepared = await prepareAttachment(file);
   assert.equal(prepared.mimeType, 'application/pdf');
   assert.equal(prepared.name, 'invoice.pdf');
@@ -180,4 +211,116 @@ test('attachment preparation rejects unsupported HEIC, signature mismatch, and o
   await assert.rejects(prepareAttachment(new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'large.pdf',
     { type: 'application/pdf' })), /5 MiB/);
   assert.throws(() => base64ToBlob('this is not base64!', 'application/pdf'), /base64/i);
+});
+
+test('final summaries require a completed review or recorded override and retain the attributed reason internally', async () => {
+  const data = job();
+  assert.throws(() => buildHandoffSnapshot(data, [], { reviewState: 'final' }), /needs review/);
+  const reviewed = { ...workflow(), handoffOverrideReason: 'Estimator reviewed missing RCV with PM.' };
+  const snapshot = buildHandoffSnapshot(data, [item('workflow', 'workflow:export-job', reviewed)] as never,
+    { reviewState: 'final', generatedBy: 'estimator@example.com' });
+  const rendered = await readPdf(await generateWorkflowSummary(snapshot));
+  assert.match(rendered.text, /estimator@example.com/);
+  assert.match(rendered.text, /Estimator reviewed missing RCV/);
+  assert.doesNotMatch(rendered.text, /DRAFT/);
+  assert.throws(() => buildCloseoutSnapshot(data, [], 'customer', { reviewState: 'final' }), /needs review/);
+});
+
+/** Portable deterministic PNG fixture with incompressible RGB pixels and no runtime dependency. */
+function photoPng(width: number, height: number, noisy = false): Uint8Array {
+  function chunk(type: string, data: Buffer) {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    let crc = 0xffffffff;
+    for (const byte of body) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    }
+    const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
+    const checksum = Buffer.alloc(4); checksum.writeUInt32BE((crc ^ 0xffffffff) >>> 0);
+    return Buffer.concat([length, body, checksum]);
+  }
+  const header = Buffer.alloc(13); header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4);
+  header[8] = 8; header[9] = 2;
+  const scanlines = Buffer.alloc(height * (width * 3 + 1));
+  let random = 0x12345678;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width * 3; x++) {
+      random ^= random << 13; random ^= random >>> 17; random ^= random << 5;
+      scanlines[y * (width * 3 + 1) + x + 1] = noisy ? random & 255 : (x % 3 === 1 ? 160 : 220);
+    }
+  }
+  return new Uint8Array(Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', header), chunk('IDAT', deflateSync(scanlines)), chunk('IEND', Buffer.alloc(0))]));
+}
+
+async function imageAttachment(id: string, bytes: Uint8Array, caption: string) {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', Uint8Array.from(bytes).buffer));
+  const sha256 = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+  return { attachment: item('attachment', id, { filename: `${id}.png`, mimeType: 'image/png', byteSize: bytes.byteLength,
+    sha256, driveFileId: `drive-${id}`, parent: { kind: 'closeout', itemId: 'closeout:export-job' }, uploadState: 'ready', caption }), bytes };
+}
+
+test('closeout photo appendix preserves portrait proportions and renders full captions including continuation pages', async () => {
+  const source = await imageAttachment('portrait', photoPng(160, 320), `Kitchen complete. ${'Caption note '.repeat(90)} CAPTION-END`);
+  const result = await createCloseoutExport(job(), [source.attachment] as never, 'customer', [source] as never);
+  const appendix = result.outputs.find(file => /photo-appendix/.test(file.fileName))!;
+  qaFile(appendix.fileName, appendix.bytes);
+  const rendered = await readPdf(appendix.bytes);
+  assert.match(rendered.text, /CAPTION-END/);
+  assert.ok(rendered.pages >= 2);
+  const doc = await pdfjs.getDocument({ data: appendix.bytes.slice(), isEvalSupported: false, useSystemFonts: true }).promise;
+  const operators = await (await doc.getPage(1)).getOperatorList();
+  const imageTransform = operators.fnArray.findIndex((fn, index) => fn === pdfjs.OPS.transform
+    && Number(operators.argsArray[index][0]) > 1 && Number(operators.argsArray[index][3]) > 1);
+  assert.ok(imageTransform >= 0, 'Photo has an explicit PDF image transform.');
+  const [width, , , height] = operators.argsArray[imageTransform] as number[];
+  assert.ok(height > width, 'Portrait photo remains taller than it is wide.');
+});
+
+test('large photo appendices split before 5 MiB with every selected source retained in the ZIP manifest', async () => {
+  const source = photoPng(1100, 1300, true);
+  const selected = await Promise.all([imageAttachment('large-1', source, 'First reviewed photo'), imageAttachment('large-2', source, 'Second reviewed photo')]);
+  const result = await createCloseoutExport(job(), selected.map(file => file.attachment) as never, 'internal', selected as never);
+  const appendices = result.outputs.filter(file => /photo-appendix/.test(file.fileName));
+  assert.equal(appendices.length, 2);
+  assert.equal(result.manifest.selectedFiles.length, 2);
+  assert.ok(appendices.every(file => file.bytes.byteLength <= 5 * 1024 * 1024));
+  for (const appendix of appendices) {
+    const pdf = await PDFDocument.load(appendix.bytes);
+    assert.equal(pdf.getPageCount(), 1);
+  }
+});
+
+test('real browser normalizes EXIF-rotated photos into an upright portrait JPEG within dimension and size limits', async () => {
+  const bundle = await build({ entryPoints: ['src/services/workflowAttachments.ts'], bundle: true, write: false,
+    format: 'iife', globalName: 'attachmentPreparation', platform: 'browser' });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.route('http://localhost:19871/**', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Photo processing test</title>' }));
+    await page.goto('http://localhost:19871/');
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    const prepared = await page.evaluate(async () => {
+      const api = (window as unknown as { attachmentPreparation: typeof import('../src/services/workflowAttachments') }).attachmentPreparation;
+      const canvas = document.createElement('canvas'); canvas.width = 3200; canvas.height = 1600;
+      const context = canvas.getContext('2d')!; context.fillStyle = '#d41229'; context.fillRect(0, 0, canvas.width, canvas.height);
+      const original = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), 'image/jpeg', 0.95));
+      const bytes = new Uint8Array(await original.arrayBuffer());
+      // EXIF orientation 6: encoded landscape pixels must display as a portrait rotated clockwise.
+      const exif = new Uint8Array([255, 225, 0, 34, 69, 120, 105, 102, 0, 0, 73, 73, 42, 0, 8, 0, 0, 0,
+        1, 0, 18, 1, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0]);
+      const oriented = new Uint8Array(bytes.length + exif.length);
+      oriented.set(bytes.slice(0, 2)); oriented.set(exif, 2); oriented.set(bytes.slice(2), 2 + exif.length);
+      const result = await api.prepareAttachment(new File([oriented.buffer], 'camera-portrait.jpg', { type: 'image/jpeg' }));
+      const decoded = await createImageBitmap(result.blob);
+      const dimensions = { width: decoded.width, height: decoded.height }; decoded.close();
+      return { ...dimensions, mimeType: result.mimeType, size: result.size, name: result.name, sha256: result.sha256 };
+    });
+    assert.equal(prepared.mimeType, 'image/jpeg');
+    assert.equal(prepared.name, 'camera-portrait.jpg');
+    assert.ok(prepared.height > prepared.width);
+    assert.equal(Math.max(prepared.width, prepared.height), 2000);
+    assert.ok(prepared.size <= 2 * 1024 * 1024);
+    assert.match(prepared.sha256, /^[a-f0-9]{64}$/);
+  } finally { await browser.close(); }
 });
