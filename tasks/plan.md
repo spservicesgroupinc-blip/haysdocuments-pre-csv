@@ -1,6 +1,8 @@
 # Implementation plan: a focused restoration job workspace
 
-Status: ready for implementation. Written October 19, 2026.
+Status: local implementation and preview delivered October 21, 2026; live backend/device acceptance remains operationally unverified. Written October 19, 2026.
+
+See `tasks/verification.md` for exact results and `tasks/rollout.md` for the remaining deployment steps. Further tests stopped at the user's request to conserve usage.
 
 ## 1. Objective, defaults, and boundaries
 
