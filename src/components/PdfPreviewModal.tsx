@@ -16,6 +16,8 @@ import {
   List,
   CloudUpload,
   Check,
+  Maximize,
+  Minimize,
 } from 'lucide-react';
 import type { PdfFieldSpan } from '../services/pdfService';
 import type { PdfEditableField, PdfFieldKind } from '../services/pdfFieldSchema';
@@ -319,6 +321,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   const [renderingError, setRenderingError] = useState<string | null>(null);
   const [isPageRendering, setIsPageRendering] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'canvas' | 'native'>('canvas');
+  const [isFullScreen, setIsFullScreen] = useState(false);
 
   // Edit-mode state (click-to-edit)
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
@@ -330,6 +333,23 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const pdfDocRef = useRef<any>(null);
   const renderTaskRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!isOpen || !isFullScreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) {
+        event.preventDefault();
+        setIsFullScreen(false);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen, isFullScreen]);
 
   // Measure the actual viewer so opening and rotating a phone both fit the page.
   useEffect(() => {
@@ -356,6 +376,7 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   // Reset state when modal opens or closes or new bytes arrive
   useEffect(() => {
     if (!isOpen) {
+      setIsFullScreen(false);
       if (renderTaskRef.current) {
         try {
           renderTaskRef.current.cancel();
@@ -616,8 +637,13 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-200">
-      <div className="relative bg-slate-900 rounded-2xl w-full max-w-5xl h-[calc(100dvh-1rem)] sm:h-[92dvh] flex flex-col shadow-2xl border border-slate-700 overflow-hidden">
+    <div className={`fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-sm flex items-center justify-center animate-in fade-in duration-200 ${isFullScreen ? 'p-0' : 'p-2 sm:p-4'}`}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`relative bg-slate-900 w-full flex flex-col shadow-2xl border-slate-700 overflow-hidden ${isFullScreen ? 'h-[100dvh] max-w-none rounded-none border-0' : 'rounded-2xl max-w-5xl h-[calc(100dvh-1rem)] sm:h-[92dvh] border'}`}
+      >
         {/* Modal Header */}
         <div className="flex items-center justify-between flex-wrap gap-x-3 gap-y-2 px-4 py-3 bg-slate-800 border-b border-slate-700 text-white select-none">
           <div className="flex items-center space-x-2.5 min-w-0">
@@ -735,6 +761,18 @@ export const PdfPreviewModal: React.FC<PdfPreviewModalProps> = ({
             >
               <FileDown className="w-3.5 h-3.5 mr-1.5" />
               Download
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsFullScreen((value) => !value)}
+              aria-label={isFullScreen ? 'Exit full screen' : 'Full screen'}
+              aria-pressed={isFullScreen}
+              title={isFullScreen ? 'Exit full screen (Esc)' : 'Full screen'}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+            >
+              {isFullScreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+              <span className="hidden sm:inline">{isFullScreen ? 'Exit full screen' : 'Full screen'}</span>
             </button>
 
             <button
