@@ -153,6 +153,30 @@ test('issued changes preserve the original form and append complete long scope w
   assert.doesNotMatch(rendered.text, /PRODUCTION HANDOFF|DRAFT/);
 });
 
+test('unissued registered changes label every original and continuation page as a draft', async () => {
+  for (const scope of ['Short draft scope', `Long draft scope ${'Additional room repair. '.repeat(100)}`]) {
+    const source = change('draft-change', 0);
+    const draft = { ...source, payload: { ...source.payload as object, number: 'CO-08', lifecycle: 'submitted', scope } };
+    const bytes = await generateRegisteredChangeOrder(job(), draft as never, workflow() as never, [], { reviewState: 'draft' });
+    const pdf = await pdfjs.getDocument({ data: bytes.slice(), isEvalSupported: false, useSystemFonts: true }).promise;
+    for (let index = 1; index <= pdf.numPages; index++) {
+      const content = await (await pdf.getPage(index)).getTextContent();
+      const text = content.items.map(item => 'str' in item ? item.str : '').join(' ');
+      assert.match(text, /DRAFT/, `Page ${index} must distinguish an unissued change from an issued document`);
+    }
+  }
+});
+
+test('a reviewed zero contract baseline never falls back to insurance RCV on the change PDF', async () => {
+  const data = job(); data.financials.totalApprovedRcv = 9876.54;
+  const source = change('CO-09', 100);
+  const bytes = await generateRegisteredChangeOrder(data, source as never,
+    { ...workflow(), contractBaseAmountCents: 0, openingPreviousChangesCents: 0 } as never, []);
+  const rendered = await readPdf(bytes);
+  assert.doesNotMatch(rendered.text, /9,876\.54/);
+  assert.match(rendered.text, /\$0\.00/);
+});
+
 async function pdfAttachment(id = 'evidence') {
   const pdf = await PDFDocument.create(); pdf.addPage();
   const bytes = await pdf.save();

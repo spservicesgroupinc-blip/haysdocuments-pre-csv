@@ -11,17 +11,26 @@ export async function discoverWorkflowCapabilities(force = false): Promise<Workf
   const owner = workflowOwner();
   if (!owner) { discovery = null; discoveredFor = ''; setWorkflowCapabilities(null); return null; }
   if (discovery && discoveredFor === owner && !force) return discovery;
+  const cacheKey = `hays.workflow.capabilities:${owner}`;
+  if (discoveredFor !== owner) {
+    setWorkflowCapabilities(null);
+    try {
+      const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+      if (cached?.apiVersion === 2 && Array.isArray(cached.features) && cached.features.every((feature: unknown) => typeof feature === 'string')) setWorkflowCapabilities(cached);
+    } catch { /* Capabilities are an optional device cache; the server still authorizes writes. */ }
+  }
   discoveredFor = owner;
   discovery = (async () => {
     try {
       const data = await callAuthenticatedAppsScript<WorkflowCapabilities>('getCapabilities');
       if (workflowOwner() !== owner) return null;
-      if (data?.apiVersion !== 2 || !Array.isArray(data.features)) { setWorkflowCapabilities(null); return null; }
+      if (data?.apiVersion !== 2 || !Array.isArray(data.features)) { setWorkflowCapabilities(null); try { localStorage.removeItem(cacheKey); } catch {} return null; }
       setWorkflowCapabilities(data);
+      try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch { /* Device storage may be unavailable. */ }
       return data;
     } catch (error) {
       if (workflowOwner() !== owner) return null;
-      if (error instanceof DatabaseError && ['unknown_action', 'bad_request'].includes(error.code)) setWorkflowCapabilities(null);
+      if (error instanceof DatabaseError && ['unknown_action', 'bad_request'].includes(error.code)) { setWorkflowCapabilities(null); try { localStorage.removeItem(cacheKey); } catch {} }
       return getWorkflowCapabilities();
     }
   })();
@@ -46,6 +55,7 @@ export async function fetchWorkflowItems(owner: string, jobId: string): Promise<
 export async function sendWorkflowOperation(owner: string, op: WorkflowOperation): Promise<JobItem> {
   assertOwner(owner);
   if ((await getOutboxOps()).some(row => row.recordId === op.jobId && row.type !== 'draft' && (!row.owner || row.owner === owner))) throw new DatabaseError('The job save must synchronize before its supporting records.', 'dependency_pending');
+  if (!getWorkflowCapabilities()?.features.includes('job_items')) throw new DatabaseError('The workspace backend needs an updated deployment. Your work is saved on this device.', 'missing_capability');
   if (op.method === 'upload' && op.kind === 'attachment') {
     const payload = op.payload as import('../types/workflow').AttachmentPayload;
     await callAuthenticatedAppsScript<{ item: JobItem<'attachment'> }>('reserveJobAttachment', { jobId: op.jobId, parent: payload.parent, attachmentId: op.itemId, mutationId: `${op.key}:reserve`, filename: payload.filename, mimeType: payload.mimeType, byteSize: payload.byteSize, sha256: payload.sha256 });

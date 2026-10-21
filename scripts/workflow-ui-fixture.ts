@@ -51,7 +51,7 @@ export class WorkflowMock {
     if (writes.includes(body.action) && user.role === 'viewer') return fail('forbidden', 'Viewers cannot modify jobs.');
     if (writes.includes(body.action) && this.blockWrites) return route.abort('connectionfailed');
     if (body.action === 'checkSession') return ok({ user });
-    if (body.action === 'getCapabilities') return ok({ apiVersion: 2, revisionProtection: true, features: ['workflow', 'job-items', 'attachments', 'artifacts', 'scoped-drafts'], attachmentConfigured: true, attachments: { configured: true, maxBytes: 5 * 1024 * 1024 } });
+    if (body.action === 'getCapabilities') return ok({ apiVersion: 2, revisionProtection: true, features: ['workflow', 'job_items', 'attachments', 'artifacts', 'scoped_drafts'], attachmentConfigured: true, attachments: { configured: true, maxBytes: 5 * 1024 * 1024 } });
     if (body.action === 'listJobs') return ok({ jobs: [this.summary()], count: 1 });
     if (body.action === 'getJob') return ok({ job: this.job, updatedAt: this.job.updatedAt, updatedBy: editor.email });
     if (body.action === 'getDraft') return ok({ draft: { job: this.job, recordId: this.job.recordId, updatedAt: this.job.updatedAt, updatedBy: editor.email } });

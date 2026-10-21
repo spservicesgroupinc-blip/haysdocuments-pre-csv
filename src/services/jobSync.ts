@@ -21,7 +21,6 @@ import {
   isDatabaseConfigured,
   isDeveloperBypassEnabled,
   listJobs,
-  saveDraft,
   saveJob,
   DatabaseError,
   type AuthContext,
@@ -54,8 +53,23 @@ import { requestOutboxSync } from './pwa';
 import { workflowAvailable, deviceId } from './workflowCapabilities';
 import { callAuthenticatedAppsScript } from './appsScriptService';
 import { discoverWorkflowCapabilities } from './workflowClient';
+import { subscribeWorkflow, workflowOperations, workflowConflicts } from './workflowStore';
 interface ServerScopedDraft { job: RestorationJobData; recordId: string; revision: number; updatedAt: string; updatedBy: string }
-interface ServerScopedDrafts { drafts: ServerScopedDraft[] }
+interface ServerScopedDrafts { drafts: ServerScopedDraft[]; nextCursor?: string | null }
+async function listScopedDrafts(owner: string | null): Promise<ServerScopedDraft[]> {
+  const drafts = new Map<string, ServerScopedDraft>(), cursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    if (currentOwner() !== owner) throw new DatabaseError('Sign in again to recover your draft.', 'unauthorized');
+    const page = await callAuthenticatedAppsScript<ServerScopedDrafts>('listWorkspaceDrafts', { deviceId: deviceId(), cursor, pageSize: 100 });
+    if (!Array.isArray(page.drafts) || page.drafts.some(draft => !draft.recordId || !draft.job || !Number.isInteger(draft.revision) || draft.revision < 1)) throw new DatabaseError('The cloud draft response is incomplete. Your device copy is retained.', 'bad_response');
+    for (const draft of page.drafts) drafts.set(draft.recordId, draft);
+    cursor = page.nextCursor || undefined;
+    if (cursor && cursors.has(cursor)) throw new DatabaseError('The cloud draft list repeated a page.', 'bad_response');
+    if (cursor) cursors.add(cursor);
+  } while (cursor);
+  return [...drafts.values()];
+}
 
 export interface SyncState {
   online: boolean;
@@ -73,6 +87,9 @@ export interface SyncState {
   lastDraftSavedAt: number | null;
   nextRetryAt: number | null;
   errorCode: string | null;
+  workflowPendingCount: number;
+  workflowConflictCount: number;
+  workflowUploadCount: number;
 }
 
 const NETWORK_ERROR_CODES = new Set(['network_error', 'timeout', 'busy', 'server_error', 'internal_error']);
@@ -106,11 +123,16 @@ function ownedByOther(owner: string | undefined, mine: string | null): boolean {
 
 /** Keeps the sync badge in step with what this account can actually flush. */
 async function refreshPendingState(): Promise<void> {
-  const summary = await summarizeOutbox(currentOwner());
+  const owner = currentOwner();
+  const [summary, workflow, conflicts] = await Promise.all([summarizeOutbox(owner), owner ? workflowOperations(owner) : [], owner ? workflowConflicts(owner) : []]);
+  if (currentOwner() !== owner) return;
   patchState({
     pendingCount: summary.mine,
     strandedCount: summary.stranded,
     strandedOwner: summary.strandedOwner,
+    workflowPendingCount: workflow.length,
+    workflowConflictCount: conflicts.length,
+    workflowUploadCount: workflow.filter(op => op.method === 'upload').length,
   });
 }
 
@@ -129,6 +151,9 @@ let state: SyncState = {
   lastDraftSavedAt: null,
   nextRetryAt: null,
   errorCode: null,
+  workflowPendingCount: 0,
+  workflowConflictCount: 0,
+  workflowUploadCount: 0,
 };
 
 const listeners = new Set<(next: SyncState) => void>();
@@ -530,7 +555,7 @@ export function flushOutboxNow(force = true): Promise<void> {
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     patchState({ nextRetryAt: null });
     // Web Locks serializes replay across tabs, where available.
-    const run = () => doFlush();
+    const run = () => doFlush(force);
     const pending = typeof navigator !== 'undefined' && navigator.locks
       ? navigator.locks.request('hays-database-sync', run) : run();
     flushPromise = pending.catch((err) => {
@@ -548,12 +573,22 @@ export async function syncNow(): Promise<void> {
   try {
     await flushDraftSave();
     await flushOutboxNow();
+    const owner = currentOwner();
+    if (owner && navigator.onLine) {
+      await discoverWorkflowCapabilities();
+      const { retryWorkflowErrors, flushWorkflowQueue } = await import('./workflowStore');
+      const { sendWorkflowOperation } = await import('./workflowClient');
+      await retryWorkflowErrors(owner);
+      await flushWorkflowQueue(owner, op => sendWorkflowOperation(owner, op), () => currentOwner() === owner);
+      await refreshPendingState();
+    }
   } catch (err) { reportDraftError(err); }
 }
 
-async function doFlush(): Promise<void> {
+async function doFlush(force = false): Promise<void> {
   if (!isDatabaseConfigured()) return;
   const owner = currentOwner();
+  if (force) for (const op of await getOutboxOps()) if (outboxOpIsMine(op, owner) && op.blocked && !op.conflictRecord) await updateOutboxOp({ ...op, blocked: false });
   // Only this account's writes are replayed. Anything queued by a different
   // account on this device stays put until that person signs in, so nobody ever
   // publishes - or is credited with - somebody else's edit.
@@ -595,7 +630,7 @@ async function doFlush(): Promise<void> {
       const latestOp = (await getOutboxOps()).find(item => item.id === op.id);
       if (!latestOp) continue;
       op = latestOp;
-      if (op.blocked || (await getOutboxOps()).some(item => item.id! < op.id! && item.recordId === op.recordId && item.blocked)) { hadFailure = true; continue; }
+      if (op.blocked || (await getOutboxOps()).some(item => item.id! < op.id! && item.recordId === op.recordId && outboxOpIsMine(item, owner) && (item.type === 'draft') === (op.type === 'draft'))) { hadFailure = true; continue; }
       const mirror = await getMirrorJob(op.recordId);
       try {
         let published = true;
@@ -644,7 +679,8 @@ async function doFlush(): Promise<void> {
         }
         if (isNetworkish(err)) {
           await updateOutboxOp({ ...op, attempts: op.attempts + 1, lastError: errorMessage(err) });
-          patchState({ lastError: errorMessage(err) });
+          patchState({ lastError: errorMessage(err), errorCode: err instanceof DatabaseError ? err.code : 'network_error' });
+          if (err instanceof DatabaseError && err.code === 'busy') { hadFailure = true; scheduleRetry(); continue; }
           throw err; // stop this run; retry on the next trigger
         }
         if (err instanceof DatabaseError && err.code === 'not_found' && op.type !== 'draft') {
@@ -656,12 +692,13 @@ async function doFlush(): Promise<void> {
         }
         if (op.type === 'draft' && err instanceof DatabaseError && err.code === 'unknown_action') {
           hadFailure = true;
+          await updateOutboxOp({ ...op, blocked: true, lastError: err.message });
           patchState({ lastError: 'Cloud draft backup needs the updated Apps Script deployment. Your draft is saved on this device.', errorCode: 'unknown_action' });
           continue;
         }
         // Rejected write (role, validation, …): keep it queued, report, continue.
         hadFailure = true;
-        await updateOutboxOp({ ...op, attempts: op.attempts + 1, lastError: errorMessage(err) });
+        await updateOutboxOp({ ...op, attempts: op.attempts + 1, blocked: true, lastError: errorMessage(err) });
         patchState({ lastError: errorMessage(err), errorCode: err instanceof DatabaseError ? err.code : 'device_storage' });
         // An invalid deployment response affects every operation. Keep the rest
         // queued rather than sending more writes without acknowledgements.
@@ -709,31 +746,21 @@ async function applyServerSave(op: OutboxOp, serverRecord: RestorationJobData) {
 async function pushDraft(auth: AuthContext, op: OutboxOp): Promise<boolean> {
   if (!op.draft) return true;
   const draft = op.draft;
+  const owner = currentOwner();
 
+  await discoverWorkflowCapabilities();
   if (workflowAvailable()) {
     if (!op.mutationId) { op = { ...op, mutationId: createRecordId() }; await updateOutboxOp(op); }
-    const result = await callAuthenticatedAppsScript<ServerScopedDrafts>('listWorkspaceDrafts', { deviceId: deviceId() });
-    const previous = result.drafts.find(item => item.recordId === (draft.recordId ?? draft.job.recordId));
+    const result = await listScopedDrafts(owner);
+    const previous = result.find(item => item.recordId === (draft.recordId ?? draft.job.recordId));
     if (!op.dispatched) { op = { ...op, expectedRevision: previous?.revision ?? 0, dispatched: true }; await updateOutboxOp(op); }
+    if (currentOwner() !== owner) throw new DatabaseError('Sign in again to synchronize your draft.', 'unauthorized');
     const saved = await callAuthenticatedAppsScript<ServerScopedDraft>('saveWorkspaceDraft', { jobId: draft.recordId ?? draft.job.recordId, deviceId: deviceId(), mutationId: op.mutationId, expectedRevision: op.expectedRevision, job: draft.job });
+    if (saved.recordId !== (draft.recordId ?? draft.job.recordId) || !Number.isInteger(saved.revision) || saved.revision <= (op.expectedRevision ?? 0) || !saved.updatedAt) throw new DatabaseError('The server did not acknowledge this cloud draft. Your device copy is retained.', 'bad_response');
     await completeOutboxOp(op, undefined, { ...draft, revision: saved.revision, serverUpdatedAt: saved.updatedAt, updatedBy: saved.updatedBy });
     return true;
   }
-  const saved = await saveDraft(auth, {
-    job: draft.job,
-    recordId: draft.recordId,
-    savedAt: draft.savedAt,
-  });
-
-  await completeOutboxOp(op, undefined, {
-      id: 'current',
-      job: draft.job,
-      recordId: draft.recordId,
-      savedAt: draft.savedAt,
-      serverUpdatedAt: saved.updatedAt,
-      updatedBy: saved.updatedBy,
-    });
-  return true;
+  throw new DatabaseError('Cloud draft backup needs the updated Apps Script deployment. Your draft is saved on this device.', 'unknown_action');
 }
 
 async function safeGetDraft(): Promise<WorkspaceDraft | undefined> {
@@ -774,6 +801,7 @@ export function initJobSync(): () => void {
   const timer = window.setInterval(() => {
     if (state.online && state.pendingCount > 0 && !state.syncing) void flushOutboxNow(false);
   }, 60_000);
+  const stopWorkflow = subscribeWorkflow(() => { void refreshPendingState().catch(reportDraftError); });
 
   const onHidden = () => { if (document.visibilityState === 'hidden') void flushDraftSave().catch(reportDraftError); };
   const onPageHide = () => { void flushDraftSave().catch(reportDraftError); };
@@ -791,6 +819,7 @@ export function initJobSync(): () => void {
 
   return () => {
     initialized = false;
+    stopWorkflow();
     window.removeEventListener('online', onOnline);
     window.removeEventListener('offline', onOffline);
     if ('serviceWorker' in navigator) {
@@ -899,7 +928,15 @@ export interface RestoredDraft {
   updatedBy?: string;
   updatedAt?: string;
   /** Where the record came from, so the UI can say so. */
-  origin: 'server' | 'local';
+  origin: 'server' | 'local' | 'legacy';
+}
+
+/** Read-only shared legacy recovery is available only after an explicit user action. */
+export async function fetchLegacyDraftRecovery(): Promise<RestoredDraft | undefined> {
+  const owner = currentOwner(), auth = await acquireAuthContext();
+  const draft = await fetchDraft(auth);
+  if (owner !== currentOwner() || !draft) return;
+  return { job: draft.job, recordId: draft.recordId, updatedBy: draft.updatedBy, updatedAt: draft.updatedAt, origin: 'legacy' };
 }
 
 /** Failures that mean "no server draft to read", not "something is broken". */
@@ -941,9 +978,9 @@ export async function restoreDraft(onLocal?: (draft: RestoredDraft) => void): Pr
   try {
     const auth = await acquireAuthContext();
     await discoverWorkflowCapabilities();
-    const server = workflowAvailable()
-      ? (await callAuthenticatedAppsScript<ServerScopedDrafts>('listWorkspaceDrafts', { deviceId: deviceId() })).drafts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null
-      : await fetchDraft(auth);
+    if (!workflowAvailable()) return localResult;
+    const drafts = await listScopedDrafts(owner);
+    const server = (local?.recordId ? drafts.find(draft => draft.recordId === local.recordId) : [...drafts].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]) ?? null;
     if (currentOwner() !== owner) return undefined;
     // Typing during recovery always wins over a delayed server response.
     const latest = await safeGetDraft();

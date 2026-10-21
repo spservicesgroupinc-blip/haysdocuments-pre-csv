@@ -1,0 +1,11 @@
+.git
+.kilo
+node_modules
+out
+src/out
+test-results
+playwright-report
+dist_desktop
+release
+.env*
+!.env.example

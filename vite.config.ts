@@ -38,7 +38,7 @@ export default defineConfig(() => {
         },
         injectManifest: {
           // Shell + pdf.js worker + icons; authed API calls are never precached.
-          globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+          globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,woff,woff2}'],
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         },
         devOptions: {enabled: false},
@@ -46,7 +46,7 @@ export default defineConfig(() => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {

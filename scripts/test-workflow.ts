@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createEmptyJob } from '../src/types/jobData';
-import { createWorkflow, migrateLegacyChange, authorizedContractTotal, isOverdue, validatePayload } from '../src/types/workflow';
+import { createWorkflow, migrateLegacyChange, authorizedContractTotal, isOverdue, validatePayload, handoffBlockers } from '../src/types/workflow';
 
 test('unknown money stays unknown and blank legacy changes do not become requests', () => {
   const job = createEmptyJob();
@@ -41,4 +41,35 @@ test('decisions and cents are validated at boundaries', () => {
   assert.throws(() => validatePayload('workflow', { ...workflow, stage: 'whatever' }));
   assert.throws(() => validatePayload('workflow', { ...workflow, contractBaseAmountCents: 1.5 }));
   assert.throws(() => validatePayload('selection', { item: 'Floor', decision: { status: 'approved' } }));
+});
+
+test('decision dates reject calendar rollover and respect leap years', () => {
+  const job = createEmptyJob();
+  job.changeOrder.scopeDescription = 'Calendar validation';
+  const payload = migrateLegacyChange(job)!.payload;
+  for (const date of ['2026-02-29', '2026-04-31', '2026-13-01']) {
+    assert.throws(() => validatePayload('change', { ...payload,
+      customerDecision: { status: 'approved', name: 'Customer', date, note: '', evidenceIds: [] } }));
+  }
+  assert.doesNotThrow(() => validatePayload('change', { ...payload,
+    customerDecision: { status: 'approved', name: 'Customer', date: '2028-02-29', note: '', evidenceIds: [] } }));
+});
+
+test('handoff reuses financial readiness while self-pay omits insurance prerequisites', () => {
+  const job = createEmptyJob();
+  job.financials.totalApprovedRcv = 0;
+  job.financials.deductible = '';
+  assert.ok(handoffBlockers(job, createWorkflow(job)).includes('Deductible'));
+  job.checklist.isSelfPay = true;
+  const blockers = handoffBlockers(job, createWorkflow(job));
+  assert.ok(!blockers.includes('Insurance carrier'));
+  assert.ok(!blockers.includes('Claim number'));
+  assert.ok(!blockers.includes('Deductible'));
+  assert.ok(!blockers.includes('Approved amount'));
+});
+
+test('authorized totals reject unsafe integer overflow rather than round money silently', () => {
+  const workflow = { ...createWorkflow(createEmptyJob()), contractBaseAmountCents: Number.MAX_SAFE_INTEGER,
+    openingPreviousChangesCents: 1 };
+  assert.throws(() => authorizedContractTotal(workflow, []), /range|cents/i);
 });

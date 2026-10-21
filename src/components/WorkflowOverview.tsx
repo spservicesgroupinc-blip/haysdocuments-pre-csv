@@ -5,7 +5,7 @@ import { cachedWorkflowItems, subscribeWorkflow } from '../services/workflowStor
 import { isOverdue, itemOf, STAGE_LABELS, type JobStage, type NextAction } from '../types/workflow';
 import { workflowOwner } from '../services/workflowClient';
 
-export interface WorkflowSummary { jobId: string; stage: JobStage; nextAction: NextAction | null; latestUpdate?: { payload: { note: string } } | null; outstandingSelections?: number; openChanges?: number; openPunchItems?: number }
+export interface WorkflowSummary { jobId: string; stage: JobStage; nextAction: NextAction | null; latestUpdate?: { payload: { note: string } } | null; outstandingSelections?: number; openChanges?: number; openPunchItems?: number; reminders?: { id: string; title: string; dueDate?: string; responsiblePerson?: { name: string; email?: string }; kind: 'selection' | 'punch' }[] }
 export function useWorkflowSummaries(jobs: SyncJobSummary[], enabled: boolean, owner: string) {
   const [summaries, setSummaries] = useState<Record<string, WorkflowSummary>>({});
   const ids = jobs.map(job => job.recordId).sort().join('|');
@@ -29,7 +29,8 @@ export function useWorkflowSummaries(jobs: SyncJobSummary[], enabled: boolean, o
       for (const job of jobs) {
         const local = await cachedWorkflowItems(owner, job.recordId);
         const workflow = itemOf(local, 'workflow')[0];
-        if (workflow) result[job.recordId] = { ...result[job.recordId], jobId: job.recordId, stage: workflow.payload.stage, nextAction: workflow.payload.nextAction };
+        if (workflow) result[job.recordId] = { ...result[job.recordId], jobId: job.recordId, stage: workflow.payload.stage, nextAction: workflow.payload.nextAction,
+          reminders: [...itemOf(local, 'selection').filter(item => item.payload.decision.status !== 'approved').map(item => ({ id: item.itemId, kind: 'selection' as const, title: item.payload.item, dueDate: item.payload.neededBy, responsiblePerson: item.payload.responsiblePerson })), ...itemOf(local, 'closeout').flatMap(item => item.payload.punchItems.filter(punch => punch.state === 'open').map(punch => ({ id: punch.id, kind: 'punch' as const, title: punch.title, dueDate: punch.dueDate, responsiblePerson: punch.responsiblePerson }))) ] };
       }
       if (!cancelled && owner === workflowOwner()) setSummaries(prior => {
         const merged = { ...prior, ...result };
@@ -53,10 +54,10 @@ export function WorkflowOverview({ jobs, summaries, owner, onOpen }: { jobs: Syn
     const summary = summaries[job.recordId];
     if (!summary || ['complete', 'cancelled'].includes(summary.stage)) return false;
     const action = summary.nextAction && !summary.nextAction.completedAt ? summary.nextAction : null;
-    if (filter === 'mine') return !!action && action.responsiblePerson.email?.toLowerCase() === owner;
-    if (filter === 'overdue') return !!action && isOverdue(action.dueDate);
+    if (filter === 'mine') return (!!action && action.responsiblePerson.email?.toLowerCase() === owner) || !!summary.reminders?.some(reminder => reminder.responsiblePerson?.email?.toLowerCase() === owner);
+    if (filter === 'overdue') return (!!action && isOverdue(action.dueDate)) || !!summary.reminders?.some(reminder => isOverdue(reminder.dueDate));
     if (filter === 'waiting') return ['on_hold', 'awaiting_contract'].includes(summary.stage) || !!summary.outstandingSelections;
-    return !!action || !!summary.outstandingSelections || !!summary.openPunchItems || ['on_hold', 'awaiting_contract'].includes(summary.stage);
+    return !!action || !!summary.reminders?.length || !!summary.outstandingSelections || !!summary.openPunchItems || ['on_hold', 'awaiting_contract'].includes(summary.stage);
   }).sort((a, b) => (summaries[a.recordId].nextAction?.dueDate || '9999').localeCompare(summaries[b.recordId].nextAction?.dueDate || '9999'));
   const [expanded, setExpanded] = useState(false);
   return <section className="rounded-xl border border-line bg-surface p-3 sm:p-5" aria-label="Needs attention"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-semibold text-primary">Needs attention</h2><label className="flex items-center gap-2 text-sm text-body">Show<select className="min-h-11 rounded-lg border border-line-strong bg-canvas px-3 text-primary" value={filter} onChange={event => { setFilter(event.target.value); setExpanded(false); }}><option value="all">All</option><option value="mine">Mine</option><option value="overdue">Overdue</option><option value="waiting">Waiting</option></select></label></div>

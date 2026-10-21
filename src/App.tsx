@@ -80,8 +80,11 @@ import { useJobWorkflow } from './services/useJobWorkflow';
 import { workflowOwner } from './services/workflowClient';
 import { WorkflowOverview, useWorkflowSummaries } from './components/WorkflowOverview';
 import { WorkflowConflictReview } from './components/WorkflowConflictReview';
+import { WorkflowLegacyRecovery } from './components/WorkflowLegacyRecovery';
+import { WORKFLOW_RELEASE, workflowSectionEnabled } from './config/workflowRelease';
 const WorkflowWorkspace = React.lazy(() => import('./components/WorkflowWorkspace'));
 const WorkflowProgress = React.lazy(() => import('./components/WorkflowProgress'));
+const WorkflowArchive = React.lazy(() => import('./components/WorkflowArchive'));
 
 export default function App() {
   const [jobData, setJobData] = useState<RestorationJobData>(() => createEmptyJob());
@@ -147,7 +150,7 @@ export default function App() {
   const [syncState, setSyncState] = useState<SyncState>(getSyncState);
   const workflow = useJobWorkflow(jobData, isAuthReady && workspaceReady, currentUser?.email.toLowerCase() || workflowOwner());
   const workflowSummaries = useWorkflowSummaries(savedJobs, workflow.available, currentUser?.email.toLowerCase() || workflowOwner());
-  const workflowProps = { job: jobData, items: workflow.items, readOnly: currentUser?.role === 'viewer', loading: workflow.loading, pendingCount: workflow.pendingCount, error: workflow.error, actorEmail: currentUser?.email, isAdmin: currentUser?.role === 'admin', onSave: workflow.save, onDelete: workflow.remove, onAttach: workflow.attach, onDownload: workflow.download, onExport: workflow.exportDocument, onRefresh: workflow.refresh };
+  const workflowProps = { job: jobData, items: workflow.items, readOnly: currentUser?.role === 'viewer', loading: workflow.loading, pendingCount: workflow.pendingCount, lastRefreshedAt: workflow.lastRefreshedAt, fromCache: workflow.fromCache, error: workflow.error, actorEmail: currentUser?.email, isAdmin: currentUser?.role === 'admin', onSave: workflow.save, onDelete: workflow.remove, onAttach: workflow.attach, onDownload: workflow.download, onExport: workflow.exportDocument, onRefresh: workflow.refresh };
 
   // Dirty tracking compares the record against the last saved/loaded baseline,
   // so programmatic whole-record replacements never look like user edits.
@@ -836,7 +839,7 @@ export default function App() {
   const hasJobInProgress = Boolean(
     jobData.customer.customerName.trim() || jobData.customer.lossAddress.trim() || recordId || isDirty
   );
-  const jobSections = WORKSPACE_SECTIONS.filter((section) => section.id !== 'home' && (workflow.available || !['updates', 'handoff', 'selections', 'closeout'].includes(section.id)));
+  const jobSections = WORKSPACE_SECTIONS.filter((section) => section.id !== 'home' && (workflow.available ? workflowSectionEnabled(section.id) : !['updates', 'handoff', 'selections', 'closeout'].includes(section.id)));
   const sectionIndex = jobSections.findIndex((section) => section.id === activeTab);
   const previousSection = sectionIndex > 0 ? jobSections[sectionIndex - 1] : undefined;
   const nextSection = sectionIndex >= 0 ? jobSections[sectionIndex + 1] : undefined;
@@ -968,7 +971,7 @@ export default function App() {
                   onOpenLibrary={() => document.getElementById('saved-jobs-search')?.focus()}
                   onReviewField={handleReviewField}
                 />
-                {workflow.available ? <React.Suspense fallback={<p role="status">Loading job progress…</p>}><WorkflowProgress {...workflowProps} /><WorkflowOverview jobs={savedJobs} summaries={workflowSummaries} owner={currentUser?.email.toLowerCase() || workflowOwner()} onOpen={id => { void handleLoadJob(id); }} /></React.Suspense> : null}
+                {workflow.available && WORKFLOW_RELEASE > 0 ? <React.Suspense fallback={<p role="status">Loading job progress…</p>}><WorkflowProgress {...workflowProps} /><WorkflowOverview jobs={savedJobs} summaries={workflowSummaries} owner={currentUser?.email.toLowerCase() || workflowOwner()} onOpen={id => { void handleLoadJob(id); }} /><WorkflowLegacyRecovery readOnly={currentUser?.role === 'viewer'} onRestore={async recovered => { const session = workspaceSessionRef.current; if (hasJobInProgress) await saveJobOffline({ ...jobDataRef.current, recordId }); await flushDraftSave(); if (session !== workspaceSessionRef.current) throw new Error('The account changed. Open recovery again with the current account.'); const normalized = ensureRecordDefaults(recovered.job); replaceJob(normalized); setRecordId(recovered.recordId ?? normalized.recordId); clearJobArtifacts(); setActiveTab('customer'); void readCachedJobSummaries().then(setSavedJobs); }} /></React.Suspense> : null}
                 <SavedCustomersPage
                   workflowSummaries={workflowSummaries}
                   jobs={savedJobs}
@@ -1046,7 +1049,7 @@ export default function App() {
               />
             )}
 
-            {workflow.available && ['updates', 'handoff', 'selections', 'closeout', 'changeOrder'].includes(activeTab) ? <React.Suspense fallback={<p role="status">Loading production workspace…</p>}><WorkflowWorkspace {...workflowProps} section={activeTab === 'changeOrder' ? 'changes' : activeTab as 'updates' | 'handoff' | 'selections' | 'closeout'} onNavigate={handleNavigate} /></React.Suspense> : null}
+            {workflow.available && workflowSectionEnabled(activeTab) && ['updates', 'handoff', 'selections', 'closeout', 'changeOrder'].includes(activeTab) ? <React.Suspense fallback={<p role="status">Loading production workspace…</p>}><WorkflowWorkspace {...workflowProps} section={activeTab === 'changeOrder' ? 'changes' : activeTab as 'updates' | 'handoff' | 'selections' | 'closeout'} onNavigate={handleNavigate} /></React.Suspense> : null}
 
             {activeTab === 'checklist' && (
               <SectionChecklist
@@ -1067,7 +1070,7 @@ export default function App() {
             )}
 
             {activeTab === 'documents' && (<>
-              {workflow.available ? <div className="flex flex-wrap gap-2 rounded-xl border border-line bg-surface p-3"><button className="min-h-11 rounded-lg border border-line px-3 text-sm font-semibold text-primary" type="button" onClick={() => handleNavigate('handoff')}>Production handoff documents</button><button className="min-h-11 rounded-lg border border-line px-3 text-sm font-semibold text-primary" type="button" onClick={() => handleNavigate('closeout')}>Closeout documents</button></div> : null}
+              {workflow.available ? <><div className="flex flex-wrap gap-2 rounded-xl border border-line bg-surface p-3">{WORKFLOW_RELEASE >= 1 && <button className="min-h-11 rounded-lg border border-line px-3 text-sm font-semibold text-primary" type="button" onClick={() => handleNavigate('handoff')}>Production handoff documents</button>}{WORKFLOW_RELEASE >= 3 && <button className="min-h-11 rounded-lg border border-line px-3 text-sm font-semibold text-primary" type="button" onClick={() => handleNavigate('closeout')}>Closeout documents</button>}</div><React.Suspense fallback={<p role="status">Loading published documents…</p>}><WorkflowArchive {...workflowProps} /></React.Suspense></> : null}
               <DocumentGenerationPanel
                 jobData={jobData}
                 onPreview={handleOpenPreview}

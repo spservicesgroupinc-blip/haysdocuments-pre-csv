@@ -21,6 +21,7 @@ test('lost response retries identical intent and does not duplicate an update', 
     if (fail) { fail = false; throw Object.assign(new Error('network'), { code: 'network_error' }); }
     return { ...(await store.cachedWorkflowItems(owner, 'job-1'))[0], revision: 1 };
   });
+  await store.retryWorkflowErrors(owner);
   await store.flushWorkflowQueue(owner, async (op) => { intents.push(op.key); return { ...(await store.cachedWorkflowItems(owner, 'job-1'))[0], revision: 1 }; });
   assert.equal(intents[0], intents[1]);
   assert.equal((await store.workflowOperations(owner)).length, 0);
@@ -58,4 +59,61 @@ test('an acknowledgement cannot overwrite a newer local edit and its next base r
     });
   }
   assert.equal(itemOf(await store.cachedWorkflowItems(owner, 'job-race'), 'workflow')[0].payload.stage, 'closeout');
+});
+test('edits queued in the same millisecond replay in durable creation order', async () => {
+  const original = Date.now; Date.now = () => 1000;
+  try {
+    await store.queueWorkflowItem(owner, 'job-order', 'workflow', 'workflow:job-order', payload);
+    await store.queueWorkflowItem(owner, 'job-order', 'workflow', 'workflow:job-order', { ...payload, stage: 'closeout' });
+  } finally { Date.now = original; }
+  const stages: string[] = [];
+  await store.flushWorkflowQueue(owner, async op => {
+    stages.push((op.payload as typeof payload).stage);
+    assert.equal(op.expectedRevision, stages.length - 1);
+    return { ...(await store.cachedWorkflowItems(owner, op.jobId))[0], payload: op.payload, revision: stages.length } as any;
+  });
+  assert.deepEqual(stages, ['intake', 'closeout']);
+});
+test('a busy target blocks subsequent edits and dependent uploads but unrelated work continues', async () => {
+  const { draftItem } = await import('../src/types/workflow');
+  await store.queueWorkflowItem(owner, 'job-busy', 'activity', 'note', { note: 'First', occurredAt: new Date().toISOString(), source: 'manual', attachmentIds: [] });
+  await store.queueWorkflowItem(owner, 'job-busy', 'activity', 'note', { note: 'Later', occurredAt: new Date().toISOString(), source: 'manual', attachmentIds: [] });
+  await store.queueWorkflowFile(owner, draftItem('job-busy', 'attachment', 'file', { filename: 'evidence.pdf', mimeType: 'application/pdf', byteSize: 5, sha256: 'a'.repeat(64), driveFileId: '', parent: { kind: 'activity', itemId: 'note' }, uploadState: 'reserved' }), new Blob(['%PDF-']));
+  await store.queueWorkflowItem(owner, 'job-independent', 'workflow', 'workflow:job-independent', payload);
+  const sent: string[] = [];
+  await store.flushWorkflowQueue(owner, async op => {
+    sent.push(`${op.jobId}:${op.itemId}`);
+    if (op.jobId === 'job-busy') throw Object.assign(new Error('Busy'), { code: 'busy' });
+    return { ...(await store.cachedWorkflowItems(owner, op.jobId))[0], revision: 1 };
+  });
+  assert.deepEqual(sent, ['job-busy:note', 'job-independent:workflow:job-independent']);
+  assert.equal((await store.workflowOperations(owner)).filter(op => op.jobId === 'job-busy').length, 3);
+});
+test('a publication persists every dependent step and resumes the same files after lost acknowledgement', async () => {
+  const { draftItem } = await import('../src/types/workflow');
+  const jobId = 'job-publication', artifactId = 'artifact';
+  const artifact = draftItem(jobId, 'artifact', artifactId, { type: 'handoff', sourceRevisions: {}, generatedAt: new Date().toISOString(), generatedBy: owner, snapshotAttachmentId: 'snapshot', outputAttachmentIds: ['output'], reviewState: 'final' });
+  const files = ['snapshot', 'output'].map(id => ({ blob: new Blob(['%PDF-']), item: draftItem(jobId, 'attachment', id, { filename: `${id}.pdf`, mimeType: 'application/pdf', byteSize: 5, sha256: 'b'.repeat(64), driveFileId: '', parent: { kind: 'artifact', itemId: artifactId }, uploadState: 'reserved' }) }));
+  await store.queueArtifactPublication(owner, artifact, files);
+  assert.equal((await store.workflowOperations(owner)).filter(op => op.jobId === jobId).length, 4);
+  let failed = false;
+  const sent: string[] = [], revisions = new Map<string, number>();
+  const sender: typeof store.flushWorkflowQueue extends (owner: string, send: infer S, ...args: any[]) => any ? S : never = async op => {
+    if (op.jobId !== jobId) throw Object.assign(new Error('busy'), { code: 'busy' });
+    sent.push(op.key);
+    if (op.itemId === 'output' && !failed) { failed = true; throw Object.assign(new Error('response lost'), { code: 'timeout' }); }
+    const revision = (revisions.get(op.itemId) ?? 0) + 1; revisions.set(op.itemId, revision);
+    return { ...(await store.cachedWorkflowItems(owner, jobId)).find(item => item.itemId === op.itemId)!, payload: op.kind === 'attachment' ? { ...op.payload, uploadState: 'ready', driveFileId: `drive-${op.itemId}` } : op.payload, revision } as any;
+  };
+  await store.flushWorkflowQueue(owner, sender);
+  const pending = (await store.workflowOperations(owner)).filter(op => op.jobId === jobId);
+  assert.equal(pending.length, 2);
+  assert.equal(pending[0].itemId, 'output');
+  assert.equal(pending[1].itemId, artifactId);
+  assert.equal((await store.cachedWorkflowBlob(owner, jobId, 'output'))?.size, 5);
+  await store.retryWorkflowErrors(owner);
+  await store.flushWorkflowQueue(owner, sender);
+  assert.equal(sent.filter(id => id === pending[0].key).length, 2);
+  assert.equal((await store.workflowOperations(owner)).filter(op => op.jobId === jobId).length, 0);
+  assert.equal(itemOf(await store.cachedWorkflowItems(owner, jobId), 'artifact')[0].revision, 2);
 });

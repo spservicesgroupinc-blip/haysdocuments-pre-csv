@@ -1,4 +1,5 @@
 import type { RestorationJobData } from './jobData';
+import { getMissingJobFields } from '../services/jobReadiness';
 
 export const STAGES = ['intake', 'awaiting_contract', 'ready_for_production', 'in_production', 'on_hold', 'closeout', 'complete', 'cancelled'] as const;
 export type JobStage = typeof STAGES[number];
@@ -64,15 +65,17 @@ export function migrateLegacyChange(job: RestorationJobData): JobItem<'change'> 
 export function authorizedContractTotal(workflow: WorkflowPayload, changes: JobItem<'change'>[]): number | null {
   if (workflow.contractBaseAmountCents === null) return null;
   const unique = [...new Map(changes.map(item => [item.itemId, item])).values()];
-  return workflow.contractBaseAmountCents + workflow.openingPreviousChangesCents + unique.filter(item => !item.deletedAt && item.payload.lifecycle !== 'void' && item.payload.customerDecision.status === 'approved').reduce((total, item) => total + item.payload.amountCents, 0);
+  const amounts = [workflow.contractBaseAmountCents, workflow.openingPreviousChangesCents,
+    ...unique.filter(item => !item.deletedAt && item.payload.lifecycle !== 'void' && item.payload.customerDecision.status === 'approved').map(item => item.payload.amountCents)];
+  return amounts.reduce((total, amount) => {
+    if (!Number.isSafeInteger(amount) || !Number.isSafeInteger(total + amount)) throw new Error('The contract total exceeds the supported exact-cent range.');
+    return total + amount;
+  }, 0);
 }
 export function handoffBlockers(job: RestorationJobData, workflow: WorkflowPayload): string[] {
-  const result: string[] = [];
-  if (!job.customer.customerName.trim()) result.push('Customer name');
-  if (!job.customer.lossAddress.trim()) result.push('Loss property address');
-  if (!job.checklist.isSelfPay && !job.insurance.carrier.trim()) result.push('Insurance carrier');
-  if (!job.checklist.isSelfPay && !job.insurance.claimNumber.trim()) result.push('Claim number');
-  if (job.financials.totalApprovedRcv === '') result.push('Approved amount');
+  const result = getMissingJobFields(job).filter(field => !job.checklist.isSelfPay ||
+    (field.section !== 'insurance' && field.inputId !== 'deductible-input')).map(field =>
+    field.inputId === 'rcv-input' ? 'Approved amount' : field.inputId === 'insurance-claimNumber' ? 'Claim number' : field.label);
   if (!job.productionNotes.scopeSummary.trim() && !job.insurance.lossDescription.trim()) result.push('Scope summary');
   if (!workflow.confirmations.contractSigned) result.push('Contract recorded signed');
   if (!workflow.confirmations.scopeReviewed) result.push('Approved scope reviewed');
@@ -87,7 +90,8 @@ const isObject = (value: unknown): value is Record<string, unknown> => !!value &
 const text = (value: unknown, max = 8000): value is string => typeof value === 'string' && value.length <= max;
 const cents = (value: unknown) => value === null || Number.isSafeInteger(value);
 const ids = (value: unknown) => Array.isArray(value) && value.length <= 100 && value.every(id => text(id, 200));
-const date = (value: unknown) => value === '' || (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)));
+const date = (value: unknown) => value === '' || (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+  && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value);
 function person(value: unknown): value is ResponsiblePerson { return isObject(value) && text(value.name, 200) && (value.email === undefined || value.email === '' || (text(value.email, 254) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value.email)))); }
 function decision(value: unknown, allowed: string[]): boolean {
   return isObject(value) && allowed.includes(String(value.status)) && text(value.name, 200) && date(value.date) && text(value.note) && ids(value.evidenceIds)

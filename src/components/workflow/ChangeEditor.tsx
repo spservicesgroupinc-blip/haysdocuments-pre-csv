@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { itemOf, validatePayload, type ChangePayload } from '../../types/workflow';
 import { ActionState, DecisionFields, DraftNotice, Field, Message, button, control, dollars, grid, primary, readCents, useAction, useDraft, type WorkflowWorkspaceProps } from './shared';
 
-export function ChangeEditor({ id, source, props, onClose }: { id: string; source: ChangePayload; props: WorkflowWorkspaceProps; onClose: () => void }) {
+export function ChangeEditor({ id, source, props, onClose, isNew = false }: { id: string; source: ChangePayload; props: WorkflowWorkspaceProps; onClose: () => void; isNew?: boolean }) {
   const form = useDraft(source, id);
-  const [amount, setAmount] = useState(() => dollars(source.amountCents));
+  const [amount, setAmount] = useState(() => isNew ? '' : dollars(source.amountCents));
   const action = useAction();
   const draft = form.draft;
-  const frozen = !!source.documentArtifactId;
-  useEffect(() => { if (!form.dirty) setAmount(dollars(source.amountCents)); }, [source.amountCents, form.dirty]);
+  const frozen = !!source.documentArtifactId || !!source.number;
+  useEffect(() => { if (!form.dirty && !isNew) setAmount(dollars(source.amountCents)); }, [source.amountCents, form.dirty, isNew]);
   const evidence = itemOf(props.items, 'attachment').filter(item => item.payload.uploadState === 'ready');
   const selections = itemOf(props.items, 'selection');
   async function save() {

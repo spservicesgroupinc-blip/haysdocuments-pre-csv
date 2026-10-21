@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { cloneElement, isValidElement, useEffect, useId, useState, type ReactElement, type ReactNode } from 'react';
 import type { RestorationJobData } from '../../types/jobData';
 import type { ItemKind, ItemPayloads, JobItem, RecordedDecision } from '../../types/workflow';
 
@@ -8,6 +8,8 @@ export interface WorkflowWorkspaceProps {
   readOnly: boolean;
   loading: boolean;
   pendingCount: number;
+  lastRefreshedAt?: string | null;
+  fromCache?: boolean;
   error: string | null;
   section?: 'updates' | 'handoff' | 'selections' | 'changes' | 'closeout';
   actorEmail?: string;
@@ -37,7 +39,11 @@ export const readCents = (raw: string): number | null => {
   return negative ? -amount : amount;
 };
 export function Field({ label, children, help }: { label: string; children: ReactNode; help?: string }) {
-  return <label className="block min-w-0 space-y-1 text-sm font-medium text-body"><span>{label}</span>{children}{help ? <span className="block text-xs font-normal text-muted">{help}</span> : null}</label>;
+  const generatedId = useId();
+  const child = isValidElement(children) ? children as ReactElement<{ id?: string; 'aria-describedby'?: string }> : null;
+  const id = child?.props.id || generatedId;
+  const description = [child?.props['aria-describedby'], help ? `${id}-help` : null].filter(Boolean).join(' ') || undefined;
+  return <div className="block min-w-0 space-y-1 text-sm font-medium text-body"><label htmlFor={id}>{label}</label>{child ? cloneElement(child, { id, 'aria-describedby': description }) : children}{help ? <p id={`${id}-help`} className="text-xs font-normal text-muted">{help}</p> : null}</div>;
 }
 export function Panel({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return <section className="min-w-0 space-y-4 rounded-xl border border-line bg-surface p-3 sm:p-5"><div><h2 className="text-base font-semibold text-primary">{title}</h2>{description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}</div>{children}</section>;

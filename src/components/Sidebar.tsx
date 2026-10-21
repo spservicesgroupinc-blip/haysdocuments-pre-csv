@@ -13,6 +13,7 @@ import {
   Landmark,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { workflowSectionEnabled } from '../config/workflowRelease';
 
 /** Every page reachable from workspace navigation. */
 export type WorkspaceTab =
@@ -76,7 +77,7 @@ export const WorkspaceNavigation: React.FC<WorkspaceNavigationProps> = ({
   activeTab, onNavigate, missingFieldCounts, showMissingWarnings, workflowEnabled = false,
 }) => {
   const activeDestination = DESTINATIONS.find((item) => (item.sections as readonly string[]).includes(activeTab))!;
-  const sections = WORKSPACE_SECTIONS.filter((section) => (activeDestination.sections as readonly string[]).includes(section.id) && (workflowEnabled || !['updates', 'handoff', 'selections', 'closeout'].includes(section.id)));
+  const sections = WORKSPACE_SECTIONS.filter((section) => (activeDestination.sections as readonly string[]).includes(section.id) && (workflowEnabled ? workflowSectionEnabled(section.id) : !['updates', 'handoff', 'selections', 'closeout'].includes(section.id)));
 
   return (
     <div className="mb-5 sm:mb-6">

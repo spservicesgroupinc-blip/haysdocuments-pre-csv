@@ -9,6 +9,7 @@ export default defineConfig({
   testMatch: ['test-save-ui.spec.ts', 'test-theme-ui.spec.ts'],
   workers: 1,
   timeout: 20000,
+  outputDir: '../test-results/save',
   use: { baseURL, viewport: { width: 1440, height: 1000 } },
   webServer: {
     command: `npm run dev -- --port=${port} --strictPort`,

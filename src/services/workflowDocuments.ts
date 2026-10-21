@@ -286,7 +286,7 @@ export function buildRegisteredChangeOrderData(job: RestorationJobData, change: 
 }
 
 export async function generateRegisteredChangeOrder(job: RestorationJobData, change: JobItem<'change'>,
-  workflow: WorkflowPayload, priorChanges: JobItem<'change'>[]): Promise<Uint8Array> {
+  workflow: WorkflowPayload, priorChanges: JobItem<'change'>[], options: SnapshotOptions = {}): Promise<Uint8Array> {
   const adapted = buildRegisteredChangeOrderData(job, change, workflow, priorChanges);
   // Unreviewed migrated records reproduce their compatibility form exactly.
   if (change.payload.legacy && !workflow.baselineReviewed) return generateChangeOrder(adapted);
@@ -295,20 +295,28 @@ export async function generateRegisteredChangeOrder(job: RestorationJobData, cha
   const lines = wrappedLines(adapted.changeOrder.scopeDescription, font, 8.5, 480);
   const overlongWord = cleanTextForPdf(adapted.changeOrder.scopeDescription).split(/\s+/)
     .some(word => font.widthOfTextAtSize(word, 8.5) > 480);
-  if (lines.length <= 9 && !overlongWord) return generateChangeOrder(adapted);
+  const isDraft = options.reviewState ? options.reviewState === 'draft' : change.payload.lifecycle === 'draft';
+  const finish = async (bytes: Uint8Array): Promise<Uint8Array> => {
+    if (!isDraft) return bytes;
+    const pdf = await PDFDocument.load(bytes);
+    const font = await pdf.embedFont(StandardFonts.HelveticaBold);
+    pdf.getPages().forEach(page => page.drawText('DRAFT - Not issued', { x: 48, y: 32, size: 9, font, color: RED }));
+    return pdf.save();
+  };
+  if (lines.length <= 9 && !overlongWord) return finish(await generateChangeOrder(adapted));
   const firstPageData = structuredClone(adapted);
   firstPageData.changeOrder.scopeDescription = `${lines.slice(0, 7).join(' ')} Full scope continues on the attached pages.`;
   const pdf = await PDFDocument.load(await generateChangeOrder(firstPageData));
   // Preserve the approved original form; append the complete scope when its fixed box is too small.
   const snapshot = makeSnapshot(job, [change], 'change_order', 'customer', [section('Complete change-order scope', [
     row('Change number', adapted.changeOrder.changeOrderNumber), row('Scope - continuation of original change order', adapted.changeOrder.scopeDescription),
-  ])], [], { reviewState: change.payload.lifecycle === 'draft' ? 'draft' : 'final' });
+  ])], [], { ...options, reviewState: isDraft ? 'draft' : 'final' });
   const appendix = await PDFDocument.load(await generateWorkflowSummary(snapshot));
   const copied = await pdf.copyPages(appendix, appendix.getPageIndices());
   copied.forEach(page => pdf.addPage(page));
   const bytes = await pdf.save();
   if (bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error('The generated change order exceeds 5 MiB. Reduce the included scope or split its supporting files.');
-  return bytes;
+  return finish(bytes);
 }
 
 async function output(fileName: string, mimeType: string, bytes: Uint8Array): Promise<WorkflowOutput> {

@@ -6,7 +6,8 @@ const baseURL = `http://127.0.0.1:${port}`;
 export default defineConfig({
   testDir: '.', testMatch: 'test-workflow-ui.spec.ts', workers: 1, timeout: 40000,
   expect: { timeout: 10000 },
+  outputDir: '../test-results/workflow',
   use: { baseURL, viewport: { width: 1440, height: 1100 }, trace: 'retain-on-failure' },
-  webServer: { command: `npm run dev -- --port=${port} --strictPort`, cwd: '..', url: baseURL, reuseExistingServer: false,
+  webServer: { command: `npm run preview -- --host=127.0.0.1 --port=${port} --strictPort`, cwd: '..', url: baseURL, reuseExistingServer: false,
     env: { VITE_APPS_SCRIPT_URL: 'https://script.google.com/macros/s/WORKFLOW_TEST/exec', VITE_DEV_SHARED_SECRET: '', VITE_DEEPSEEK_API_KEY: 'workflow-test-key' } },
 });

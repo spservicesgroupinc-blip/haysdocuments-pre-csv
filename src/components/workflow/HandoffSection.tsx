@@ -16,7 +16,8 @@ export function HandoffSection(props: WorkflowWorkspaceProps) {
   const changes = itemOf(props.items, 'change').filter(item => !['closed', 'void'].includes(item.payload.lifecycle));
   const artifacts = itemOf(props.items, 'artifact').filter(item => item.payload.type === 'handoff').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const latest = artifacts[0];
-  const stale = !!latest && Object.entries(latest.payload.sourceRevisions).some(([key, revision]) => key === `job:${props.job.recordId || props.job.id}` ? (props.job.revision ?? 0) !== revision : props.items.some(item => key === `${item.kind}:${item.itemId}` && item.revision !== revision));
+  const sourceRevisions = { [`job:${props.job.recordId || props.job.id}`]: props.job.revision ?? 0, ...Object.fromEntries(props.items.filter(item => !item.deletedAt && item.kind !== 'artifact' && !(item.kind === 'attachment' && item.payload.parent.kind === 'artifact')).map(item => [`${item.kind}:${item.itemId}`, item.revision])) };
+  const stale = !!latest && (Object.entries(latest.payload.sourceRevisions).some(([key, revision]) => sourceRevisions[key] !== revision) || Object.keys(sourceRevisions).some(key => !(key in latest.payload.sourceRevisions)));
   async function save() { form.assertCurrent(); validatePayload('workflow', draft); await props.onSave('workflow', stored?.itemId ?? `workflow:${props.job.recordId || props.job.id}`, draft); form.saved(); }
   async function publish() {
     if (form.dirty) throw new Error('Save the handoff review, wait for sync, then publish.');

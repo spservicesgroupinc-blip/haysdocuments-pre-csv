@@ -1,105 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import test from 'node:test';
-import vm from 'node:vm';
-import { loadAppsScriptSource } from './appsscript-source';
-
-type Cell = unknown;
-class Sheet {
-  rows: Cell[][] = [];
-  constructor(public name: string, private failWrite: (name: string, values: Cell[][]) => void) {}
-  getName() { return this.name; }
-  getLastRow() { return this.rows.length; }
-  getLastColumn() { return this.rows.reduce((n, row) => Math.max(n, row.length), 0); }
-  getMaxRows() { return 200; }
-  getFrozenRows() { return 1; }
-  setFrozenRows() {}
-  setColumnWidth() {}
-  setRowHeight() {}
-  hideColumns() {}
-  clear() { this.rows = []; }
-  getDataRange() { return { getValues: () => this.rows.map(row => [...row]) }; }
-  appendRow(row: Cell[]) { this.failWrite(this.name, [row]); this.rows.push([...row]); }
-  deleteRow(row: number) { this.rows.splice(row - 1, 1); }
-  getRange(row: number, col: number, count = 1, cols = 1) {
-    const range: any = {
-      getValues: () => Array.from({ length: count }, (_, r) => Array.from({ length: cols }, (_, c) => this.rows[row - 1 + r]?.[col - 1 + c] ?? '')),
-      setValues: (values: Cell[][]) => {
-        this.failWrite(this.name, values);
-        values.forEach((line, r) => {
-          while (this.rows.length < row + r) this.rows.push([]);
-          line.forEach((value, c) => { this.rows[row - 1 + r][col - 1 + c] = value; });
-        });
-        return range;
-      },
-      setValue: (value: Cell) => range.setValues([[value]]),
-    };
-    for (const fn of ['setFontWeight', 'setFontColor', 'setBackground', 'setVerticalAlignment', 'setWrap', 'setNumberFormat', 'setFontSize']) range[fn] = () => range;
-    return range;
-  }
-}
-
-function environment() {
-  const properties: Record<string, string> = { DB_SPREADSHEET_ID: 'TEST', SCHEMA_VERSION: '1', SHARED_SECRET: 'test-only' };
-  let crash: ((name: string, values: Cell[][]) => boolean) | undefined;
-  const sheets = new Map<string, Sheet>();
-  const failWrite = (name: string, values: Cell[][]) => { if (crash?.(name, values)) { crash = undefined; throw new Error('simulated interrupted write'); } };
-  const spreadsheet = {
-    getSheetByName: (name: string) => sheets.get(name) ?? null,
-    insertSheet: (name: string) => { const sheet = new Sheet(name, failWrite); sheets.set(name, sheet); return sheet; },
-    getSheets: () => [...sheets.values()], getId: () => 'TEST', getUrl: () => 'test://spreadsheet', deleteSheet: () => {},
-  };
-  const files = new Map<string, { id: string; name: string; mimeType: string; parents: string[]; bytes: number[] }>();
-  let driveCreates = 0;
-  let failAfterCreate = false;
-  const makeBlob = (bytes: number[] | Buffer, mimeType = '', name = '') => ({ getBytes: () => [...bytes], getContentType: () => mimeType, getName: () => name, getDataAsString: () => Buffer.from(bytes).toString('utf8') });
-  const folder = (id: string) => ({ getId: () => id, getFoldersByName: (name: string) => ({ hasNext: () => false, next: () => folder(`${id}/${name}`) }), createFolder: (name: string) => folder(`${id}/${name}`) });
-  const sandbox: any = {
-    Logger: { log: () => {} },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (key: string) => properties[key] ?? null, setProperty: (key: string, value: string) => { properties[key] = value; }, setProperties: (values: Record<string, string>) => Object.assign(properties, values) }) },
-    SpreadsheetApp: { openById: () => spreadsheet, create: () => spreadsheet, flush: () => {} },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
-    ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (text: string) => ({ setMimeType: () => text }) },
-    ScriptApp: { getService: () => ({ getUrl: () => '' }) },
-    Utilities: {
-      getUuid: randomUUID, DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
-      computeDigest: (_algorithm: string, value: string | number[]) => [...createHash('sha256').update(typeof value === 'string' ? value : Buffer.from(value.map(x => x & 255))).digest()],
-      base64Encode: (value: string | number[]) => Buffer.from(value as any).toString('base64'),
-      base64Decode: (value: string) => [...Buffer.from(value, 'base64')],
-      base64EncodeWebSafe: (value: string) => Buffer.from(value).toString('base64url'),
-      base64DecodeWebSafe: (value: string) => [...Buffer.from(value, 'base64url')],
-      newBlob: makeBlob,
-    },
-    DriveApp: {
-      getFolderById: folder,
-      getFileById: (id: string) => { const f = files.get(id); if (!f) throw new Error('not found'); return { getBlob: () => makeBlob(f.bytes, f.mimeType, f.name), getId: () => id, getName: () => f.name, getMimeType: () => f.mimeType, getSize: () => f.bytes.length }; },
-    },
-    Drive: { Permissions: { list: () => ({ permissions: [] }) }, Files: {
-      generateIds: () => ({ ids: [randomUUID()] }),
-      get: (id: string) => { const f = files.get(id); if (!f) throw new Error('not found'); return { ...f, size: String(f.bytes.length), sha256Checksum: createHash('sha256').update(Buffer.from(f.bytes)).digest('hex'), trashed: false }; },
-      create: (metadata: any, blob: any) => {
-        if (files.has(metadata.id)) throw new Error('already exists');
-        driveCreates++;
-        const f = { ...metadata, bytes: blob.getBytes() };
-        files.set(metadata.id, f);
-        if (failAfterCreate) { failAfterCreate = false; throw new Error('response lost after Drive creation'); }
-        return f;
-      },
-    } },
-  };
-  vm.createContext(sandbox);
-  vm.runInContext(loadAppsScriptSource(), sandbox, { filename: 'Code.gs' });
-  const jobs = spreadsheet.insertSheet('Jobs'); jobs.rows = [[...sandbox.JOB_HEADERS]];
-  spreadsheet.insertSheet('AuditLog').rows = [[...sandbox.LOG_HEADERS]];
-  const editor = { email: 'editor@example.com', name: 'Editor', role: 'editor' };
-  const other = { email: 'other@example.com', name: 'Other', role: 'editor' };
-  const viewer = { email: 'viewer@example.com', name: 'Viewer', role: 'viewer' };
-  const admin = { email: 'admin@example.com', name: 'Admin', role: 'admin' };
-  const call = (fn: string, ...args: any[]) => JSON.parse(JSON.stringify(sandbox[fn](...args)));
-  const createJob = (id = 'job-1') => call('saveJob_', editor, { recordId: id, status: 'Draft', customer: { customerName: 'Test' } }, { protocolVersion: 2, mutationId: randomUUID(), expectedRevision: 0 });
-  const mutate = (kind: string, itemId: string, payload: unknown, options: any = {}, user = editor) => call('mutateJobItem_', user, { jobId: 'job-1', kind, itemId, operation: 'create', expectedRevision: 0, mutationId: randomUUID(), payload, ...options });
-  return { sandbox, properties, sheets, files, editor, other, viewer, admin, call, createJob, mutate, crashOn: (fn: typeof crash) => { crash = fn; }, loseDriveAck: () => { failAfterCreate = true; }, driveCreates: () => driveCreates };
-}
+import { environment } from './test-apps-script-harness';
 
 const workflow = { stage: 'intake', nextAction: null, holdReason: '', contractBaseAmountCents: null, openingPreviousChangesCents: 0, baselineReviewed: false, latestHandoffArtifactId: null, confirmations: { contractSigned: false, scopeReviewed: false, initialPayment: 'pending', mortgageReviewed: 'not_applicable' }, handoffOverrideReason: '' };
 const activity = (note = 'Progress') => ({ note, occurredAt: '2026-10-19T12:00:00.000Z', source: 'manual', attachmentIds: [] });
@@ -338,6 +240,21 @@ test('workflow summaries derive legacy status, manual latest update and outstand
   assert.throws(() => e.call('listJobWorkflowSummaries_', e.viewer, { jobIds: Array.from({ length: 101 }, () => 'job-1') }), errorCode('bad_request'));
 });
 
+test('workflow summaries include dated selection/punch reminders and suppress completed/cancelled jobs', () => {
+  const e = environment(); e.createJob();
+  e.mutate('workflow', 'workflow:job-1', workflow);
+  e.mutate('selection', 'finish', { room: '', item: 'Paint approval', specification: '', allowanceCents: null, neededBy: '2026-10-19', responsiblePerson: { name: 'PM', email: 'pm@example.com' }, decision: decision(), attachmentIds: [] });
+  e.mutate('closeout', 'closeout:job-1', { completionDate: '', checklist: [], punchItems: [{ id: 'punch-1', title: 'Trim repair', state: 'open', dueDate: '2026-10-21', responsiblePerson: { name: 'Field', email: 'field@example.com' } }], attachmentIds: [], latestArtifactId: null, completionOverrideReason: '' });
+  const summary = () => e.call('listJobWorkflowSummaries_', e.viewer, { jobIds: ['job-1'] }).summaries[0];
+  assert.deepEqual(summary().reminders, [{ id: 'finish', kind: 'selection', title: 'Paint approval', dueDate: '2026-10-19', responsiblePerson: { name: 'PM', email: 'pm@example.com' } }, { id: 'punch-1', kind: 'punch', title: 'Trim repair', dueDate: '2026-10-21', responsiblePerson: { name: 'Field', email: 'field@example.com' } }]);
+  e.mutate('workflow', 'workflow:job-1', { ...workflow, stage: 'complete' }, { operation: 'update', expectedRevision: 1 });
+  assert.deepEqual(summary().reminders, []);
+  e.mutate('workflow', 'workflow:job-1', { ...workflow, stage: 'intake' }, { operation: 'update', expectedRevision: 2 });
+  assert.equal(summary().reminders.length, 2);
+  e.mutate('workflow', 'workflow:job-1', { ...workflow, stage: 'cancelled' }, { operation: 'update', expectedRevision: 3 });
+  assert.deepEqual(summary().reminders, []);
+});
+
 test('router rejects unauthenticated routes and error envelopes preserve canonical conflict details', () => {
   const e = environment(); const job = e.createJob();
   const unauthenticated = JSON.parse(e.sandbox.doPost({ postData: { contents: JSON.stringify({ action: 'getCapabilities' }) } }));
@@ -409,4 +326,46 @@ test('pending supporting intent cannot publish a new row after its job was delet
   e.call('deleteJob_', e.editor, 'job-1', { protocolVersion: 2, expectedRevision: job.revision, mutationId: randomUUID() });
   assert.throws(() => e.mutate('activity', 'pending', activity(), { mutationId }), errorCode('not_found'));
   assert.equal(e.sheets.get('JobItems')?.rows.filter(row => row[2] === 'pending').length, 0);
+});
+
+test('number allocation freezes issued content before document upload and disallows draft reversion or deletion', () => {
+  const e = environment(); e.createJob();
+  e.mutate('workflow', 'workflow:job-1', { ...workflow, baselineReviewed: true, contractBaseAmountCents: 100000 });
+  const issued = e.mutate('change', 'issued', { ...change(), lifecycle: 'submitted' });
+  assert.equal(issued.item.payload.number, 'CO-001');
+  assert.throws(() => e.mutate('change', 'issued', { ...issued.item.payload, scope: 'Silently revised' }, { operation: 'update', expectedRevision: 1 }), errorCode('immutable_artifact'));
+  assert.throws(() => e.mutate('change', 'issued', { ...issued.item.payload, lifecycle: 'draft' }, { operation: 'update', expectedRevision: 1 }), errorCode('immutable_artifact'));
+  assert.throws(() => e.mutate('change', 'issued', undefined, { operation: 'delete', expectedRevision: 1 }), errorCode('immutable_artifact'));
+  const voided = e.mutate('change', 'issued', { ...issued.item.payload, lifecycle: 'void' }, { operation: 'update', expectedRevision: 1 });
+  assert.equal(voided.item.payload.lifecycle, 'void');
+});
+
+test('pending finalization is recovered before a baseline edit can change frozen contract amounts', () => {
+  const e = environment(); e.createJob();
+  const baseline = { ...workflow, baselineReviewed: true, contractBaseAmountCents: 100000 };
+  e.mutate('workflow', 'workflow:job-1', baseline);
+  e.crashOn((name, values) => name === 'JobItems' && values.some(row => row[2] === 'issued'));
+  assert.throws(() => e.mutate('change', 'issued', { ...change(), lifecycle: 'submitted' }), /interrupted/);
+  assert.throws(() => e.mutate('workflow', 'workflow:job-1', { ...baseline, contractBaseAmountCents: 200000 }, { operation: 'update', expectedRevision: 1 }), errorCode('immutable_baseline'));
+  assert.equal(e.call('listJobItems_', e.viewer, { jobId: 'job-1', kinds: ['change'] }).items[0].payload.number, 'CO-001');
+});
+
+test('direct change document publication requires reviewed baseline and a numbered change source', () => {
+  const e = environment(); e.createJob(); e.properties.WORKFLOW_DRIVE_ROOT_ID = 'private-root';
+  const p = artifactPayload('change_order'); e.mutate('artifact', 'artifact', p);
+  uploadArtifactFile(e, 'snapshot', Buffer.from('{}'), 'application/json'); uploadArtifactFile(e, 'output', Buffer.from('%PDF-1.7\nTest'), 'application/pdf');
+  assert.throws(() => e.mutate('artifact', 'artifact', { ...p, reviewState: 'final' }, { operation: 'update', expectedRevision: 1 }), errorCode('dependency_pending'));
+  e.mutate('workflow', 'workflow:job-1', { ...workflow, baselineReviewed: true, contractBaseAmountCents: 100000 });
+  assert.throws(() => e.mutate('artifact', 'artifact', { ...p, reviewState: 'final' }, { operation: 'update', expectedRevision: 1 }), errorCode('dependency_pending'));
+  e.mutate('change', 'issued', { ...change(), lifecycle: 'submitted' });
+  const published = e.mutate('artifact', 'artifact', { ...p, sourceRevisions: { ...p.sourceRevisions, 'change:issued': 1 }, reviewState: 'final' }, { operation: 'update', expectedRevision: 1 });
+  assert.equal(published.item.payload.type, 'change_order');
+  assert.throws(() => e.mutate('workflow', 'workflow:job-1', { ...workflow, baselineReviewed: true, contractBaseAmountCents: 100000, latestHandoffArtifactId: 'artifact' }, { operation: 'update', expectedRevision: 1 }), errorCode('bad_request'));
+});
+
+test('a public job subfolder is rejected even when its configured root is private', () => {
+  const e = environment(); e.createJob(); e.mutate('activity', 'note', activity()); e.properties.WORKFLOW_DRIVE_ROOT_ID = 'private-root';
+  e.sandbox.Drive.Permissions.list = (id: string) => ({ permissions: id === 'private-root' ? [] : [{ type: 'anyone', role: 'reader' }] });
+  assert.throws(() => reserve(e, Buffer.from('%PDF-1.7\nTest')), errorCode('storage_not_private'));
+  assert.equal(e.call('listJobItems_', e.viewer, { jobId: 'job-1', kinds: ['attachment'] }).items.length, 0);
 });

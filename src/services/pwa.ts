@@ -48,7 +48,8 @@ export function initPwa(options: PwaOptions): void {
 
 /** True when the app is launched as an installed PWA window. */
 export function isStandalone(): boolean {
-  return window.matchMedia('(display-mode: standalone)').matches;
+  return window.matchMedia('(display-mode: standalone)').matches ||
+    (navigator as Navigator & { standalone?: boolean }).standalone === true;
 }
 
 /**

@@ -3,10 +3,13 @@ import { PDFDocument } from 'pdf-lib';
 
 const user = { email: 'test@example.com', name: 'Test', role: 'editor' };
 const job = { recordId: 'saved-1', customer: { jobNumber: 'UI-TEST', customerName: 'Recovered customer' } };
-const ok = (route: Route, data: unknown) => route.fulfill({
-  contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' },
-  body: JSON.stringify({ ok: true, data }),
-});
+const ok = (route: Route, data: any) => {
+  const body = route.request().postDataJSON();
+  // Keep the original job fixtures while modeling the current scoped protocol.
+  if (body.action === 'listWorkspaceDrafts' && data && 'draft' in data) data = { drafts: data.draft ? [{ ...data.draft, revision: data.draft.revision ?? 1 }] : [] };
+  if (body.action === 'saveWorkspaceDraft' && data?.job) data = { ...data, recordId: body.jobId, revision: body.expectedRevision + 1 };
+  return route.fulfill({ contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ ok: true, data }) });
+};
 
 const sectionLabels = {
   home: 'Home', intake: 'Intake', customer: 'Customer & Property', insurance: 'Insurance & Claim',
@@ -24,7 +27,7 @@ async function navigate(page: Page, section: keyof typeof sectionLabels) {
   }
 }
 
-async function start(page: Page, handler: (route: Route, body: any) => Promise<void>, savedJobs: unknown[] = []) {
+async function start(page: Page, handler: (route: Route, body: any) => Promise<void>, savedJobs: unknown[] = [], legacy = false) {
   await page.addInitScript((account) => {
     localStorage.setItem('hays.db.session', JSON.stringify({ token: 'ui-session', expiresAt: '2099-01-01T00:00:00Z', user: account }));
   }, user);
@@ -32,14 +35,20 @@ async function start(page: Page, handler: (route: Route, body: any) => Promise<v
     const body = route.request().postDataJSON();
     if (body.action === 'checkSession') await ok(route, { user });
     else if (body.action === 'listJobs') await ok(route, savedJobs);
-    // This suite exercises the legacy backend. Model its explicit unsupported-action response.
-    else if (body.action === 'getCapabilities') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: false, code: 'unknown_action', error: 'Legacy backend' }) });
+    else if (body.action === 'getCapabilities') {
+      if (legacy) await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: false, code: 'unknown_action', error: 'Legacy backend' }) });
+      else await ok(route, { apiVersion: 2, features: ['scoped_drafts'], revisionProtection: true });
+    }
+    else if (body.action === 'listJobItems') await ok(route, { items: [], nextCursor: null });
+    else if (body.action === 'listJobWorkflowSummaries') await ok(route, { summaries: [] });
+    else if (body.action === 'listWorkspaceDrafts') await handler(route, { ...body, action: 'getDraft' });
+    else if (body.action === 'saveWorkspaceDraft') await handler(route, { ...body, action: 'saveDraft', draft: { job: body.job, recordId: body.jobId } });
     else await handler(route, body);
   });
   await page.goto('/');
 }
 
-test('startup recovers the shared draft before any autosave writes', async ({ page }) => {
+test('startup recovers the scoped account/device draft before any autosave writes', async ({ page }) => {
   const sent: any[] = [];
   await start(page, async (route, body) => {
     if (body.action === 'getDraft') await ok(route, { draft: { job, recordId: job.recordId, updatedAt: '2026-10-06T12:00:00Z' } });
@@ -53,6 +62,19 @@ test('startup recovers the shared draft before any autosave writes', async ({ pa
   await expect.poll(() => sent.length).toBe(1);
   expect(sent[0].customer.customerName).toBe('Edited customer');
   await expect(page.getByText('Draft synced', { exact: true })).toBeVisible();
+});
+test('a legacy deployment retains local drafts and never reads or overwrites its shared cloud draft automatically', async ({ page }) => {
+  const requests: string[] = [];
+  await start(page, async (route, body) => { requests.push(body.action); await ok(route, { draft: { job, recordId: job.recordId } }); }, [], true);
+  await navigate(page, 'customer');
+  await expect(page.locator('#customer-customerName')).toHaveValue('');
+  await page.locator('#customer-customerName').fill('Private device draft');
+  await expect(page.getByText(/draft is saved on this device/i).first()).toBeVisible();
+  await page.reload();
+  await navigate(page, 'customer');
+  await expect(page.locator('#customer-customerName')).toHaveValue('Private device draft');
+  expect(requests).not.toContain('getDraft');
+  expect(requests).not.toContain('saveDraft');
 });
 
 test('manual save stays responsive and edits survive a delayed cloud response', async ({ page }) => {

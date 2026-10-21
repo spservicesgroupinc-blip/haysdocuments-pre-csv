@@ -25,6 +25,7 @@
 
   body {
     margin: 0;
+    min-height: 100dvh;
     background-color: var(--app-canvas);
     color: var(--app-body);
     -webkit-font-smoothing: antialiased;
@@ -42,6 +43,11 @@
     -moz-appearance: textfield;
     appearance: textfield;
   }
+}
+
+/* The dynamic viewport follows Safari's changing browser bars. */
+@supports (min-height: 100dvh) {
+  .min-h-screen { min-height: 100dvh; }
 }
 
 /* ---------------------------------------------------------------------------

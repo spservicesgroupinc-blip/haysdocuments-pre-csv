@@ -58,10 +58,13 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
   }, []);
 
   const showInstall = !!installEvent && !installed && !dismissedInstall && !isDesktop();
-  const showSyncCard = !sync.online || sync.pendingCount > 0 || sync.strandedCount > 0 || !!sync.lastError;
+  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const showIosInstall = isIos && !installed && !dismissedInstall && !isDesktop();
+  const workflowPending = sync.workflowPendingCount || 0;
+  const showSyncCard = !sync.online || sync.pendingCount > 0 || workflowPending > 0 || sync.strandedCount > 0 || !!sync.lastError;
   const retryable = ['network_error', 'timeout', 'busy', 'server_error', 'internal_error'].includes(sync.errorCode ?? '');
 
-  if (!showInstall && !showSyncCard && !updateReady && !sync.conflictNotice) return null;
+  if (!showInstall && !showIosInstall && !showSyncCard && !updateReady && !sync.conflictNotice) return null;
 
   const pendingLabel = `${sync.pendingCount} change${sync.pendingCount === 1 ? '' : 's'}`;
   const strandedLabel = `${sync.strandedCount} change${
@@ -132,7 +135,7 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
                   ? sync.syncing
                     ? `Syncing ${pendingLabel}…`
                     : `${pendingLabel} waiting to sync`
-                  : sync.lastError ? 'Saving needs attention' : `${strandedLabel} waiting to sync`
+                  : sync.lastError ? 'Saving needs attention' : workflowPending ? 'Job updates waiting to sync' : `${strandedLabel} waiting to sync`
                 : 'Offline — working from saved copies'}
             </p>
             <p className="text-[12px] text-muted mt-0.5 leading-snug">
@@ -141,15 +144,16 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
                   ? sync.lastError
                     ? retryable ? 'Changes are saved on this device. Retrying the connection automatically.' : 'Changes are saved on this device. Resolve the connection issue, then select Sync now.'
                     : 'Saving to the customer database automatically.'
-                  : sync.lastError ? 'Keep this window open until your changes are saved.' : `Sign in as ${sync.strandedOwner ?? 'the account that made them'} to send them to the customer database.`
+                  : sync.lastError ? 'Keep this window open until your changes are saved.' : workflowPending ? 'Job updates are saved on this device. Review any conflicts before retrying.' : `Sign in as ${sync.strandedOwner ?? 'the account that made them'} to send them to the customer database.`
                 : sync.pendingCount > 0
                   ? 'Changes are saved on this device and will sync when the connection returns.'
                   : 'You can keep editing and generating documents.'}
             </p>
+            {workflowPending > 0 && <p className="mt-1 text-xs text-muted" role="status">{workflowPending} job update(s) pending · {sync.workflowConflictCount || 0} need review · {sync.workflowUploadCount || 0} file transfer(s)</p>}
             {sync.lastError && (
               <p className="text-[11px] text-rose-700 mt-1 leading-snug">Last sync error: {sync.lastError}</p>
             )}
-            {sync.online && !sync.syncing && (sync.pendingCount > 0 || sync.errorCode === 'device_storage') && (
+            {sync.online && !sync.syncing && (sync.pendingCount > 0 || workflowPending > 0 || sync.errorCode === 'device_storage') && (
               <button
                 type="button"
                 onClick={() => void syncNow()}
@@ -159,6 +163,14 @@ export const PwaStatus: React.FC<{ hasBottomNavigation?: boolean }> = ({ hasBott
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {showIosInstall && (
+        <div className="rounded-xl border border-line bg-surface px-4 py-3 shadow-lg">
+          <p className="text-[13px] font-semibold text-primary">Install Hays + Sons</p>
+          <p className="mt-1 text-xs leading-snug text-muted">In Safari, tap Share, then Add to Home Screen. Open the installed app once online to prepare it for offline use.</p>
+          <button type="button" className="mt-2 min-h-11 rounded-lg border border-line px-3 text-xs font-semibold text-body" onClick={() => setDismissedInstall(true)}>Not now</button>
         </div>
       )}
 

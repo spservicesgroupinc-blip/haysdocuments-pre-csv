@@ -964,7 +964,8 @@ function registrationRequiresCode_() {
 
 function selfRegistrationRole_() {
   var props = PropertiesService.getScriptProperties();
-  return props.getProperty(PROP.REGISTRATION_DEFAULT_ROLE) || DEFAULTS.REGISTRATION_DEFAULT_ROLE;
+  var role = props.getProperty(PROP.REGISTRATION_DEFAULT_ROLE) || DEFAULTS.REGISTRATION_DEFAULT_ROLE;
+  return role === 'viewer' ? 'viewer' : 'editor';
 }
 
 function describeRegistrationMode_() {
@@ -998,6 +999,7 @@ function createUser(email, name, password, role) {
   ensureDatabaseReady_();
   if (!email || !password) throw appError_('bad_request', 'Email and password are required.');
   email = String(email).trim().toLowerCase();
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw appError_('invalid_email', 'A valid email address is required.');
   role = role || 'editor';
 
   if (ROLE_VALUES.indexOf(role) === -1) {
@@ -1146,6 +1148,8 @@ function registerUser_(email, name, password, inviteCode) {
       throw appError_('invalid_invite_code', 'Invalid or missing registration invite code.');
     }
   }
+
+  email = String(email || '').trim().toLowerCase();
 
   var allowedDomains = PropertiesService.getScriptProperties().getProperty(PROP.REGISTRATION_EMAIL_DOMAINS);
   if (allowedDomains) {
@@ -1685,6 +1689,7 @@ function recoverWorkspaceJournal_(entry) {
     }
     current = readWorkspaceItemRow_(intent.item.jobId, intent.item.kind, intent.item.itemId);
     if (!current || String(current.values[9]) !== intent.mutationId) {
+      requireWorkspaceJob_({ email: intent.item.updatedBy, role: 'editor' }, intent.item.jobId, true);
       var liveRevision = current ? Number(current.values[3]) : 0;
       if (liveRevision !== Number(entry.values[6])) workspaceConflict_(current && workspaceItemFromRow_(current.values));
       workspacePutRow_(workflowTable_('JobItems'), current && current.row, workspaceItemValues_(intent.item));
@@ -1817,9 +1822,21 @@ function verifyWorkspaceRelations_(jobId, kind, itemId, p) {
     if (p[key]) {
       var artifact = workspaceItem_(jobId, 'artifact', p[key]);
       workspaceAssert_(artifact.payload.reviewState === 'final', 'Linked documents must be published.', 'dependency_pending');
+      var expectedType = key === 'latestHandoffArtifactId' ? 'handoff' : key === 'documentArtifactId' ? 'change_order' : 'closeout';
+      workspaceAssert_(artifact.payload.type === expectedType, 'The linked document has the wrong artifact type.');
     }
   });
   if (kind === 'artifact' && p.reviewState === 'final') {
+    workspaceAssert_(Object.prototype.hasOwnProperty.call(p.sourceRevisions, 'job:' + jobId) || Object.prototype.hasOwnProperty.call(p.sourceRevisions, 'job'), 'A published document must record its core job revision.');
+    if (p.type === 'change_order') {
+      var baseline = workspaceItem_(jobId, 'workflow', 'workflow:' + jobId, true);
+      workspaceAssert_(baseline && baseline.payload.baselineReviewed && baseline.payload.contractBaseAmountCents !== null, 'Review the contract baseline before publishing a change document.', 'dependency_pending');
+      workspaceAssert_(Object.keys(p.sourceRevisions).some(function (key) {
+        if (key.indexOf('change:') !== 0) return false;
+        var change = workspaceItem_(jobId, 'change', key.slice(7), true);
+        return change && !change.deletedAt && !!change.payload.number;
+      }), 'A final change document requires its numbered change source.', 'dependency_pending');
+    }
     [p.snapshotAttachmentId].concat(p.outputAttachmentIds).forEach(function (id) {
       var file = workspaceItem_(jobId, 'attachment', id);
       workspaceAssert_(file.payload.uploadState === 'ready' && file.payload.parent.kind === 'artifact' && file.payload.parent.itemId === itemId, 'All published document files must be ready and belong to this artifact.', 'dependency_pending');
@@ -1867,13 +1884,16 @@ function mutateJobItem_(user, request) {
       }
       if (kind === 'artifact') { payload.generatedBy = current ? current.payload.generatedBy : user.email; payload.generatedAt = current ? current.payload.generatedAt : new Date().toISOString(); }
       if (kind === 'workflow' && current && (current.payload.contractBaseAmountCents !== payload.contractBaseAmountCents || current.payload.openingPreviousChangesCents !== payload.openingPreviousChangesCents || (current.payload.baselineReviewed && !payload.baselineReviewed))) {
+        recoverWorkspaceJobChanges_(jobId);
         workspaceAssert_(!workspaceItemsForJob_(jobId).some(function (entry) { return entry.kind === 'change' && !entry.payload.legacy && entry.payload.number; }), 'The reviewed contract baseline is frozen after a change is issued.', 'immutable_baseline');
       }
       if (kind === 'change') {
         if (current && current.payload.number) workspaceAssert_(payload.number === current.payload.number, 'An assigned change number cannot be changed.');
         else if (!payload.legacy) workspaceAssert_(!payload.number, 'New display numbers are assigned by the server.');
-        if (current && current.payload.number && current.payload.documentArtifactId) {
-          ['number', 'scope', 'amountCents', 'addedDays', 'insuranceRelated', 'documentArtifactId'].forEach(function (key) { workspaceAssert_(stableWorkspaceJson_(current.payload[key]) === stableWorkspaceJson_(payload[key]), 'Issued changes require an amendment for content edits.', 'immutable_artifact'); });
+        if (current && current.payload.number) {
+          ['number', 'scope', 'amountCents', 'addedDays', 'insuranceRelated', 'legacy', 'predecessorId', 'linkedSelectionIds'].forEach(function (key) { workspaceAssert_(stableWorkspaceJson_(current.payload[key]) === stableWorkspaceJson_(payload[key]), 'Issued changes require an amendment for content edits.', 'immutable_artifact'); });
+          if (!current.payload.legacy) workspaceAssert_(payload.lifecycle !== 'draft', 'Issued changes cannot return to draft. Create an amendment.', 'immutable_artifact');
+          if (current.payload.documentArtifactId) workspaceAssert_(payload.documentArtifactId === current.payload.documentArtifactId, 'The issued document cannot be replaced.', 'immutable_artifact');
         }
         if ((!current || !current.payload.legacy) && id !== 'legacy:' + jobId) workspaceAssert_(!payload.legacy, 'Legacy snapshots can only be imported using a legacy:<jobId> ID.', 'forbidden');
         if (id === 'legacy:' + jobId && !current) {
@@ -1891,6 +1911,8 @@ function mutateJobItem_(user, request) {
         } else if (!current && !payload.legacy) workspaceAssert_(!payload.number, 'New display numbers are assigned by the server.');
       }
       verifyWorkspaceRelations_(jobId, kind, id, payload);
+    } else if (kind === 'change' && current.payload.number) {
+      throw appError_('immutable_artifact', 'Issued changes cannot be removed. Record a void or create an amendment.');
     } else if (kind === 'attachment') {
       workspaceAssert_(!workspaceItemsForJob_(jobId).some(function (item) { return item.kind === 'artifact' && item.payload.reviewState === 'final' && (item.payload.snapshotAttachmentId === id || item.payload.outputAttachmentIds.indexOf(id) !== -1); }), 'This file belongs to an immutable document version.', 'referenced_attachment');
     }
@@ -1933,7 +1955,17 @@ function listJobWorkflowSummaries_(user, request) {
     var workflowItem = items.filter(function (item) { return item.kind === 'workflow'; })[0];
     var workflow = workflowItem ? workflowItem.payload : { stage: ({ Draft: 'intake', Active: 'in_production', 'On Hold': 'on_hold', Complete: 'complete', Cancelled: 'cancelled' })[job.values[9]] || 'intake', nextAction: null };
     var updates = items.filter(function (item) { return item.kind === 'activity' && item.payload.source === 'manual'; }).sort(function (a, b) { return b.payload.occurredAt.localeCompare(a.payload.occurredAt) || b.itemId.localeCompare(a.itemId); });
+    var reminders = [];
+    if (['complete', 'cancelled'].indexOf(workflow.stage) === -1) {
+      items.forEach(function (item) {
+        if (item.kind === 'selection' && item.payload.decision.status !== 'approved') reminders.push({ id: item.itemId, kind: 'selection', title: item.payload.item, dueDate: item.payload.neededBy, responsiblePerson: item.payload.responsiblePerson });
+        if (item.kind === 'closeout') item.payload.punchItems.forEach(function (punch) {
+          if (punch.state === 'open') reminders.push({ id: punch.id, kind: 'punch', title: punch.title, dueDate: punch.dueDate || '', responsiblePerson: punch.responsiblePerson || { name: '' } });
+        });
+      });
+    }
     return { jobId: id, revision: workflowItem ? workflowItem.revision : 0, stage: workflow.stage, nextAction: workflow.nextAction, holdReason: workflow.holdReason || '', latestUpdate: updates[0] || null,
+      reminders: reminders,
       outstandingSelections: items.filter(function (item) { return item.kind === 'selection' && item.payload.decision.status !== 'approved'; }).length,
       openChanges: items.filter(function (item) { return item.kind === 'change' && ['closed', 'void'].indexOf(item.payload.lifecycle) === -1; }).length,
       openPunchItems: items.filter(function (item) { return item.kind === 'closeout'; }).reduce(function (total, item) { return total + item.payload.punchItems.filter(function (punch) { return punch.state === 'open'; }).length; }, 0) };
@@ -1972,18 +2004,23 @@ function listWorkspaceDrafts_(user, request) {
 function requireWorkspaceStorage_() {
   var root = PropertiesService.getScriptProperties().getProperty(PROP.WORKFLOW_DRIVE_ROOT_ID);
   if (!root || typeof Drive === 'undefined' || !Drive.Files || !Drive.Permissions) throw appError_('not_configured', 'Private file storage needs WORKFLOW_DRIVE_ROOT_ID and the Advanced Drive v3 service.');
+  requireWorkspacePrivateLocation_(root);
+  return root;
+}
+function requireWorkspacePrivateLocation_(id) {
   var pageToken;
   do {
-    var page = Drive.Permissions.list(root, { fields: 'nextPageToken,permissions(type,role)', pageSize: 100, pageToken: pageToken, supportsAllDrives: true });
+    var page = Drive.Permissions.list(id, { fields: 'nextPageToken,permissions(type,role)', pageSize: 100, pageToken: pageToken, supportsAllDrives: true });
     workspaceAssert_(!(page.permissions || []).some(function (permission) { return permission.type === 'anyone' || permission.type === 'domain'; }), 'The configured upload folder must be private.', 'storage_not_private');
     pageToken = page.nextPageToken;
   } while (pageToken);
-  return root;
 }
 function workspaceJobFolder_(jobId, root) {
   var name = 'job-' + workspaceDigest_(jobId).slice(0, 32);
   var parent = DriveApp.getFolderById(root); var folders = parent.getFoldersByName(name);
-  return folders.hasNext() ? folders.next().getId() : parent.createFolder(name).getId();
+  var id = folders.hasNext() ? folders.next().getId() : parent.createFolder(name).getId();
+  requireWorkspacePrivateLocation_(id);
+  return id;
 }
 function safeWorkspaceFilename_(filename) {
   workspaceAssert_(workspaceText_(filename, 255) && !!filename.trim() && !/[\x00-\x1f\x7f\/\\]/.test(filename) && filename !== '.' && filename !== '..' && !/^[=+@]/.test(filename), 'Use a safe filename without paths or control characters.');
@@ -2058,6 +2095,7 @@ function uploadJobAttachment_(user, request) {
   var reservation = workspaceItem_(request.jobId, 'attachment', request.attachmentId);
   workspaceBytesMatch_(bytes, reservation.payload);
   requireWorkspaceStorage_();
+  requireWorkspacePrivateLocation_(reservation.payload.driveFolderId);
   var target = 'item:' + request.jobId + ':attachment:' + request.attachmentId;
   var binding = journalBinding_(user, request.jobId, target, 'uploadJobAttachment', { attachmentId: request.attachmentId, sha256: reservation.payload.sha256, byteSize: reservation.payload.byteSize });
   var staged = withWriteLock_(function () {

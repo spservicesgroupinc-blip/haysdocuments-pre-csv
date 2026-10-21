@@ -24,7 +24,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function setup(t: TestContext, fetcher: (body: any) => Promise<Response> | Response) {
+function setup(t: TestContext, fetcher: (body: any) => Promise<Response> | Response, scopedDrafts = true, readDrafts = false) {
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const trackedTimeout = (fn: () => void, ms: number) => {
     const timer = setTimeout(() => { timers.delete(timer); fn(); }, ms);
@@ -32,17 +32,33 @@ function setup(t: TestContext, fetcher: (body: any) => Promise<Response> | Respo
     return timer;
   };
   t.after(() => { for (const timer of timers) clearTimeout(timer); });
-  let session: string | null = JSON.stringify({ token: 'test-session', expiresAt: '2099-01-01T00:00:00Z',
-    user: { email: owner, name: 'Test', role: 'editor' } });
+  const localValues = new Map([['hays.db.session', JSON.stringify({ token: 'test-session', expiresAt: '2099-01-01T00:00:00Z',
+    user: { email: owner, name: 'Test', role: 'editor' } })]]);
   const context = vm.createContext({
     console, URL, AbortController, structuredClone, indexedDB: new IDBFactory(), IDBKeyRange,
     setTimeout: trackedTimeout, clearTimeout,
     window: { setTimeout: trackedTimeout, clearTimeout }, navigator: { onLine: true },
     localStorage: {
-      getItem: () => session, setItem: (_key: string, value: string) => { session = value; },
-      removeItem: () => { session = null; },
+      getItem: (key: string) => localValues.get(key) ?? null, setItem: (key: string, value: string) => { localValues.set(key, value); },
+      removeItem: (key: string) => { localValues.delete(key); },
     },
-    fetch: async (_url: string, options: RequestInit) => fetcher(JSON.parse(options.body as string)),
+    fetch: async (_url: string, options: RequestInit) => {
+      const body = JSON.parse(options.body as string);
+      if (body.action === 'getCapabilities') return scopedDrafts ? reply({ apiVersion: 2, features: ['scoped_drafts', 'job_items'], revisionProtection: true }) : new Response(JSON.stringify({ ok: false, code: 'unknown_action', error: 'Legacy deployment' }));
+      if (body.action === 'listWorkspaceDrafts' && !readDrafts) return reply({ drafts: [] });
+      const response = await fetcher(body.action === 'saveWorkspaceDraft' ? { ...body, draft: { job: body.job, recordId: body.jobId } } : body);
+      if (body.action === 'listWorkspaceDrafts') {
+        const value = await response.clone().json();
+        if (value?.ok && 'draft' in value.data) return reply({ drafts: value.data.draft ? [{ ...value.data.draft, revision: 1 }] : [] });
+        return response;
+      }
+      {
+        if (body.action !== 'saveWorkspaceDraft' || !response.ok) return response;
+        const value = await response.clone().json().catch(() => null);
+        if (value?.ok && value.data?.job) return reply({ ...value.data, recordId: body.jobId, revision: body.expectedRevision + 1 });
+        return response;
+      }
+    },
   });
   vm.runInContext(bundle.outputFiles[0].text, context);
   return context.syncEngine;
@@ -153,8 +169,9 @@ test('autosave is durable and preserves edits made during cloud sync', async (t)
   engine.scheduleDraftSave(latest, job.recordId);
   await engine.flushDraftSave();
   const queued = await engine.storage.getOutboxOps();
-  assert.equal(queued.length, 1);
-  assert.notEqual(queued[0].id, originalId);
+  assert.equal(queued.length, 2);
+  assert.equal(queued[0].id, originalId);
+  assert.notEqual(queued[1].id, originalId);
   response.resolve(reply({ job, updatedAt: '2026-10-06T12:00:00Z' }));
   await run;
   assert.equal((await engine.storage.getDraft(owner)).job.customer.customerName, 'Typed during sync');
@@ -182,7 +199,7 @@ test('account drafts and pending autosaves remain isolated', async (t) => {
 test('local recovery is immediate and delayed shared recovery preserves pending edits', async (t) => {
   const response = deferred<Response>();
   const started = deferred<void>();
-  const engine = setup(t, () => { started.resolve(); return response.promise; });
+  const engine = setup(t, () => { started.resolve(); return response.promise; }, true, true);
   await engine.storage.putDraft({ id: `current:${owner}`, owner, job, savedAt: 1, serverUpdatedAt: '2026-10-06T11:00:00Z' });
   let painted = false;
   const recovery = engine.restoreDraft(() => { painted = true; });
@@ -198,7 +215,7 @@ test('local recovery is immediate and delayed shared recovery preserves pending 
 });
 
 test('obsolete draft deployments retain pending backups and report the upgrade needed', async (t) => {
-  const engine = setup(t, () => new Response(JSON.stringify({ ok: false, code: 'unknown_action', error: 'Unsupported' })));
+  const engine = setup(t, () => new Response(JSON.stringify({ ok: false, code: 'unknown_action', error: 'Unsupported' })), false);
   engine.scheduleDraftSave(job, job.recordId);
   await engine.flushDraftSave();
   await engine.flushOutboxNow();

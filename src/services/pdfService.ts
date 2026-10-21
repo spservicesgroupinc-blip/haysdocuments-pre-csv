@@ -1876,14 +1876,15 @@ export async function generateChangeOrder(data: RestorationJobData): Promise<Uin
   // Financial Lines
   y -= 45;
   page.drawText('The original contract sum was: ............................................................................', { x: 50, y, size: 8, font, color: COLOR_DARK });
-  drawFieldValue(page, { key: 'changeOrder.originalContractSum', value: formatCurrency(data.changeOrder.originalContractSum || data.financials.totalApprovedRcv), x: 450, y, size: 8, font: fontBold, color: COLOR_DARK, bold: true });
+  const originalContractSum = data.changeOrder.originalContractSum === '' ? data.financials.totalApprovedRcv : data.changeOrder.originalContractSum;
+  drawFieldValue(page, { key: 'changeOrder.originalContractSum', value: formatCurrency(originalContractSum), x: 450, y, size: 8, font: fontBold, color: COLOR_DARK, bold: true });
 
   y -= 18;
   page.drawText('Net changes by previous authorized change orders: ...................................................', { x: 50, y, size: 8, font, color: COLOR_DARK });
   drawFieldValue(page, { key: 'changeOrder.netPreviousChanges', value: formatCurrency(data.changeOrder.netPreviousChanges || 0), x: 450, y, size: 8, font: fontBold, color: COLOR_DARK, bold: true });
 
   y -= 18;
-  const priorSum = Number(data.changeOrder.originalContractSum || data.financials.totalApprovedRcv || 0) + Number(data.changeOrder.netPreviousChanges || 0);
+  const priorSum = Number(originalContractSum || 0) + Number(data.changeOrder.netPreviousChanges || 0);
   page.drawText('The contract sum prior to this change was: ...........................................................', { x: 50, y, size: 8, font, color: COLOR_DARK });
   page.drawText(formatCurrency(priorSum), { x: 450, y, size: 8, font: fontBold, color: COLOR_DARK });
 
