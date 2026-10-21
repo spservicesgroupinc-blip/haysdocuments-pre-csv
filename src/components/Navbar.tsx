@@ -45,7 +45,7 @@ interface NavbarProps {
 }
 
 const BTN_BASE =
-  'inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40 disabled:opacity-45 disabled:cursor-not-allowed';
+  'items-center justify-center gap-1.5 rounded-lg text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40 disabled:opacity-45 disabled:cursor-not-allowed';
 
 export const Navbar: React.FC<NavbarProps> = ({
   isHome,
@@ -120,7 +120,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>}
 
           {/* Actions */}
-          <div className={`flex ${isHome ? 'w-auto' : 'w-full lg:w-auto'} items-center justify-end gap-1.5 sm:gap-2 shrink-0`}>
+          <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0">
             {(isOffline || pendingSyncCount > 0 || draftStatus !== 'idle') && (
               <span
                 title={
@@ -141,7 +141,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={onOpenSavedCustomers}
               aria-label="Open saved jobs"
               title={databaseEmail ? `Saved jobs — signed in as ${databaseEmail}` : 'Open saved jobs'}
-              className={`${BTN_BASE} min-h-11 px-2 sm:px-3 border border-line text-body hover:bg-canvas hover:text-primary`}
+              className={`${BTN_BASE} hidden sm:inline-flex min-h-11 px-2 sm:px-3 border border-line text-body hover:bg-canvas hover:text-primary`}
             >
               <Database className="w-4 h-4 text-faint" aria-hidden />
               <span>Jobs</span>
@@ -156,7 +156,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               type="button"
               onClick={onReset}
               title="Start a new job"
-              className={`${BTN_BASE} min-h-11 px-2 sm:px-3 border border-line-strong text-body hover:bg-canvas hover:text-primary`}
+              className={`${BTN_BASE} hidden sm:inline-flex min-h-11 px-2 sm:px-3 border border-line-strong text-body hover:bg-canvas hover:text-primary`}
             >
               <Plus className="w-4 h-4" aria-hidden />
               <span>New job</span>
@@ -165,9 +165,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             {(!isHome || hasJobInProgress) && <button
               type="button"
               onClick={onSaveJob}
+              aria-label={isSavingJob ? 'Saving job' : 'Save job'}
               disabled={isSavingJob || !isDatabaseConfigured}
               title={saveTitle}
-              className={`${BTN_BASE} min-h-11 px-2.5 sm:px-3.5 bg-red-700 text-white hover:bg-red-800 shadow-sm`}
+              className={`${BTN_BASE} inline-flex min-h-11 px-2.5 sm:px-3.5 bg-red-700 text-white hover:bg-red-800 shadow-sm`}
             >
               {isSavingJob ? (
                 <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
@@ -176,7 +177,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               ) : (
                 <Check className="w-4 h-4" aria-hidden />
               )}
-              <span>{isSavingJob ? 'Saving…' : 'Save job'}</span>
+              <span className="sm:hidden">{isSavingJob ? 'Saving…' : 'Save'}</span><span className="hidden sm:inline">{isSavingJob ? 'Saving…' : 'Save job'}</span>
             </button>}
 
             {/* Account and integrations */}
@@ -197,7 +198,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 aria-label="Account and connections"
                 aria-controls="account-panel"
                 aria-expanded={isMenuOpen}
-                className={`${BTN_BASE} min-h-11 min-w-11 px-2 border border-line text-secondary hover:bg-canvas`}
+                className={`${BTN_BASE} inline-flex min-h-11 min-w-11 px-2 border border-line text-secondary hover:bg-canvas`}
               >
                 <UserCircle className="w-4 h-4" aria-hidden />
                 <span className="hidden 2xl:inline">Account</span>

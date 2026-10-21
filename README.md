@@ -141,7 +141,18 @@ connection returns. Revision conflicts retain both copies for explicit review.
 
 The six workflow capabilities are job progress/next action, dated updates and supporting files,
 production handoff, selections with recorded decisions, multiple changes, and reviewed closeout.
-Home, Intake, Job details, Production, and Documents remain the five main destinations.
+Home, Job details, Changes, Production, and Documents are the five main destinations.
+On phones these stay in a bottom navigation bar; desktop shows the same destinations
+across the top with section tabs. Intake is inside Job details. Switch job returns to
+the searchable saved-job library. Each page shows only its own tools.
+
+Changes opens a short form for the scope and price, with optional calendar days and
+insurance details. Review the job, scope, and amount before submitting. Unfinished
+quick forms recover on the same browser, scoped to the signed-in account and job.
+Saved drafts and submissions use the existing offline queue; submission receives a
+server number after sync. It does not send an email or establish customer approval.
+The full change editor, decisions, attachments, issuing, and contract baseline remain
+available on desktop and mobile. An older backend retains the legacy PDF form.
 
 Supporting records and private files use Apps Script, Sheets, and Drive. `JobItems` holds typed
 revisioned records; `JobMutations` journals stable mutation IDs for replay after unknown outcomes.

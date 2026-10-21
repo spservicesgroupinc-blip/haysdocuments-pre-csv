@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowRight, Check, CircleAlert, Cloud, CloudOff, FileInput, FileCheck, FolderOpen, Loader2, MapPin, Plus, UserCircle } from 'lucide-react';
+import { ArrowRight, Check, CircleAlert, Cloud, CloudOff, FileEdit, FileInput, FileCheck, FolderOpen, Loader2, MapPin, Plus, UserCircle } from 'lucide-react';
 import type { SyncJobSummary } from '../services/localDb';
 import type { MissingJobField } from '../services/jobReadiness';
 import type { WorkspaceTab } from './Sidebar';
@@ -69,6 +69,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <span>{syncLabel}{pendingSyncCount > 0 ? ` · ${pendingSyncCount} pending` : ''}</span>
         </div>
       </div>
+
+      <section className="flex flex-col gap-4 rounded-xl border border-brand-line bg-brand-tint p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" aria-labelledby="quick-change-title">
+        <div className="flex items-start gap-3">
+          <FileEdit className="mt-0.5 h-5 w-5 shrink-0 text-brand-copy-strong" aria-hidden="true" />
+          <div><h2 id="quick-change-title" className="text-base font-semibold text-primary">Need a change order?</h2>
+            <p className="mt-1 text-sm text-secondary">Open the job, describe the change, then review and submit.</p></div>
+        </div>
+        <button type="button" onClick={() => onNavigate('changeOrder')} className={`${ACTION} shrink-0 bg-red-700 text-white hover:bg-red-800`}>Quick change order <ArrowRight className="h-4 w-4" aria-hidden="true" /></button>
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <section className="flex flex-col rounded-xl border border-line bg-surface p-5 sm:p-6" aria-labelledby="current-work-title">

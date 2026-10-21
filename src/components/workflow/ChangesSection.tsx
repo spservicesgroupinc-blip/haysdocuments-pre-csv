@@ -3,6 +3,7 @@ import { blankDecision, itemOf, newId, workflowOf, type ChangePayload, type JobI
 import { ActionState, ArtifactDownloads, AttachmentList, Panel, button, money, primary, useAction, type WorkflowWorkspaceProps } from './shared';
 import { ContractBaseline } from './ContractBaseline';
 import { ChangeEditor } from './ChangeEditor';
+import { QuickChangeForm } from './QuickChangeForm';
 
 export const blankChange = (): ChangePayload => ({ number: '', scope: '', insuranceRelated: true, amountCents: 0, addedDays: 0, lifecycle: 'draft', customerDecision: blankDecision(), carrierDecision: blankDecision(), attachmentIds: [], linkedSelectionIds: [], documentArtifactId: null });
 export type NewSelectionChange = { id: string; selection: SelectionPayload };
@@ -24,6 +25,8 @@ function ChangeCard({ item, props, onEdit, onAmend }: { item: JobItem<'change'>;
 export function ChangesSection({ newSelectionChange, onSelectionChangeConsumed, ...props }: WorkflowWorkspaceProps & { newSelectionChange?: NewSelectionChange | null; onSelectionChangeConsumed?: () => void }) {
   const changes = itemOf(props.items, 'change');
   const [editing, setEditing] = useState<{ id: string; payload: ChangePayload } | null>(null);
+  const [quickOpen, setQuickOpen] = useState(true);
+  const [notice, setNotice] = useState('');
   useEffect(() => {
     if (!newSelectionChange) return;
     const selection = newSelectionChange.selection;
@@ -33,10 +36,14 @@ export function ChangesSection({ newSelectionChange, onSelectionChangeConsumed, 
   function amend(item: JobItem<'change'>) {
     setEditing({ id: newId(), payload: { ...blankChange(), insuranceRelated: item.payload.insuranceRelated, carrierDecision: item.payload.insuranceRelated ? blankDecision() : { ...blankDecision(), status: 'not_applicable' }, scope: `Amendment to ${item.payload.number || 'previous change'}:\n${item.payload.scope}`, predecessorId: item.itemId, linkedSelectionIds: [...item.payload.linkedSelectionIds] } });
   }
-  return <div className="space-y-4"><ContractBaseline {...props} /><Panel title="Changes and supplements" description="Keep each change and its customer and carrier decisions separate.">
-    {!props.readOnly && !editing ? <button className={primary} type="button" onClick={() => setEditing({ id: newId(), payload: blankChange() })}>Add change / supplement</button> : null}
+  return <div className="space-y-4">
+    {notice ? <p role="status" className="rounded-lg border border-line bg-surface p-3 text-sm text-body">{notice}</p> : null}
+    {!props.readOnly && quickOpen && !editing ? <QuickChangeForm props={props} onClose={() => setQuickOpen(false)} onComplete={submitted => { setQuickOpen(false); setNotice(submitted ? 'Change submitted on this device. It syncs to the shared register and receives its number when connected. Customer approval is still pending.' : 'Change draft saved on this device. It will sync to the shared register when connected.'); }} /> : null}
+    {!props.readOnly && !quickOpen && !editing ? <button className={primary} type="button" onClick={() => { setQuickOpen(true); setNotice(''); }}>Quick change order</button> : null}
+    <Panel title="Changes and supplements" description="Review saved changes, attach photos, record decisions, and issue documents.">
+    {!props.readOnly && !editing ? <button className={button} type="button" onClick={() => { setQuickOpen(false); setEditing({ id: newId(), payload: blankChange() }); }}>Add change / supplement</button> : null}
     {editing ? <ChangeEditor id={editing.id} source={changes.find(item => item.itemId === editing.id)?.payload ?? editing.payload} isNew={!changes.some(item => item.itemId === editing.id)} key={editing.id} props={props} onClose={() => setEditing(null)} /> : null}
     {!changes.length && !editing ? <p className="text-sm text-muted">No changes recorded. Add only changes needed for this job.</p> : null}
     <ul className="space-y-3">{changes.map(item => <ChangeCard key={item.itemId} item={item} props={props} onEdit={() => setEditing({ id: item.itemId, payload: structuredClone(item.payload) })} onAmend={() => amend(item)} />)}</ul>
-  </Panel></div>;
+  </Panel><details className="rounded-xl border border-line bg-surface p-3 sm:p-4"><summary className="min-h-8 cursor-pointer text-sm font-semibold text-primary">Contract totals & baseline</summary><div className="mt-3"><ContractBaseline {...props} /></div></details></div>;
 }

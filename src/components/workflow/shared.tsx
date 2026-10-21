@@ -27,8 +27,9 @@ export interface WorkflowWorkspaceProps {
 }
 
 export const control = 'min-h-11 w-full min-w-0 rounded-lg border border-line-strong bg-canvas px-3 py-2 text-sm text-primary focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60';
-export const button = 'min-h-11 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-semibold text-body hover:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50';
-export const primary = `${button} border-red-600 bg-red-600 text-white hover:bg-red-700`;
+const buttonBase = 'min-h-11 rounded-lg border px-3 py-2 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-50';
+export const button = `${buttonBase} border-line-strong bg-surface text-body hover:bg-subtle`;
+export const primary = `${buttonBase} border-red-700 bg-red-700 text-white hover:bg-red-800`;
 export const grid = 'grid grid-cols-1 gap-4 sm:grid-cols-2';
 export const money = (cents: number | null) => cents === null ? 'Not recorded' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 export const dollars = (cents: number | null) => cents === null ? '' : (cents / 100).toFixed(2);

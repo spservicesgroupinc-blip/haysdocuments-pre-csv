@@ -56,7 +56,7 @@ import {
 import type { SyncJobSummary } from './services/localDb';
 import { LoginScreen } from './components/LoginScreen';
 import { Navbar } from './components/Navbar';
-import { WorkspaceNavigation, WORKSPACE_SECTIONS } from './components/Sidebar';
+import { WorkspaceNavigation } from './components/Sidebar';
 import type { WorkspaceTab } from './components/Sidebar';
 import { SavedCustomersPage } from './components/SavedCustomersPage';
 import { HomeScreen } from './components/HomeScreen';
@@ -75,7 +75,7 @@ import { ConfirmModal } from './components/ConfirmModal';
 import { PwaStatus } from './components/PwaStatus';
 import { ProvenanceRecord } from './services/intakeParser';
 import { getMissingJobFields, type MissingJobField } from './services/jobReadiness';
-import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useJobWorkflow } from './services/useJobWorkflow';
 import { workflowOwner } from './services/workflowClient';
 import { WorkflowOverview, useWorkflowSummaries } from './components/WorkflowOverview';
@@ -318,6 +318,7 @@ export default function App() {
   const handleOpenSavedCustomers = async () => {
     setActiveTab('home');
     await handleRefreshJobs();
+    document.getElementById('saved-jobs-search')?.focus();
   };
 
   /** Workspace navigation. Returning home always refreshes the saved list. */
@@ -839,10 +840,6 @@ export default function App() {
   const hasJobInProgress = Boolean(
     jobData.customer.customerName.trim() || jobData.customer.lossAddress.trim() || recordId || isDirty
   );
-  const jobSections = WORKSPACE_SECTIONS.filter((section) => section.id !== 'home' && (workflow.available ? workflowSectionEnabled(section.id) : !['updates', 'handoff', 'selections', 'closeout'].includes(section.id)));
-  const sectionIndex = jobSections.findIndex((section) => section.id === activeTab);
-  const previousSection = sectionIndex > 0 ? jobSections[sectionIndex - 1] : undefined;
-  const nextSection = sectionIndex >= 0 ? jobSections[sectionIndex + 1] : undefined;
 
   // Auth gate — the workspace is only reachable once signed in (or in developer mode).
   if (!isAuthReady) {
@@ -929,9 +926,10 @@ export default function App() {
         />
         <WorkflowConflictReview conflicts={workflow.conflicts} onResolve={workflow.resolve} onCoreResolved={resolved => { if (resolved.recordId === jobData.recordId) replaceJob(resolved); }} />
         {activeTab !== 'home' && (
-          <div className="mb-4 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm lg:hidden" aria-label="Current job">
-            <span className="font-semibold text-primary">{jobData.customer.customerName || 'New job'}</span>
-            <span className="text-muted">· {jobData.customer.jobNumber}</span>
+          <div className="mb-4 flex min-w-0 items-center justify-between gap-3 rounded-lg border border-line bg-surface px-3 py-2 text-sm" aria-label="Current job">
+            <div className="min-w-0"><p className="truncate font-semibold text-primary">{jobData.customer.customerName || 'New job'}</p>
+            <p className="truncate text-xs text-muted">{jobData.customer.jobNumber || 'Add job details to get started'}</p></div>
+            <button type="button" onClick={handleOpenSavedCustomers} className="min-h-11 shrink-0 rounded-lg px-3 text-xs font-semibold text-brand-copy-strong hover:bg-subtle">Switch job</button>
           </div>
         )}
         <div className="flex items-start gap-6">
@@ -939,14 +937,14 @@ export default function App() {
           <div className="flex-1 min-w-0 space-y-4 sm:space-y-6">
             {/* Keep intake mounted across sections so navigation preserves pending analysis. */}
             {activeTab !== 'home' && (
-              <IntakeParserCard
+              <div hidden={activeTab !== 'intake'}><IntakeParserCard
                 key={intakeSession}
                 onApplyIntake={handleApplyIntake}
                 currentJob={jobData}
                 currentProvenance={provenance}
                 isExpanded={activeTab === 'intake'}
                 onExpand={() => handleNavigate('intake')}
-              />
+              /></div>
             )}
 
             {activeTab === 'home' && (
@@ -1039,7 +1037,12 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'changeOrder' && !workflow.available && (
+            {activeTab === 'changeOrder' && <details open={!recordId} className="rounded-xl border border-line bg-surface p-3" aria-label="Change order job"><summary className="min-h-8 cursor-pointer text-sm font-semibold text-body">{recordId ? 'Edit job name or number' : 'Choose a saved job or add a new job'}</summary><div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm font-medium text-body">Customer / job name<input className="mt-1 min-h-11 w-full rounded-lg border border-line-strong bg-canvas px-3 text-primary" value={jobData.customer.customerName} readOnly={currentUser?.role === 'viewer'} onChange={event => handleCustomerChange('customerName', event.target.value)} /></label>
+              <label className="block text-sm font-medium text-body">Job number<input className="mt-1 min-h-11 w-full rounded-lg border border-line-strong bg-canvas px-3 text-primary" value={jobData.customer.jobNumber} readOnly={currentUser?.role === 'viewer'} onChange={event => handleCustomerChange('jobNumber', event.target.value)} /></label>
+            </div>{!recordId && <div className="mt-3"><p className="mb-2 text-sm text-muted">Save the job first so its changes stay together in the shared workspace.</p><button type="button" disabled={isSavingJob || !jobData.customer.customerName.trim() || !jobData.customer.jobNumber.trim() || currentUser?.role === 'viewer'} onClick={handleSaveJob} className="min-h-11 rounded-lg bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50">Save job and continue</button></div>}</details>}
+
+            {activeTab === 'changeOrder' && (!workflow.available || !workflowSectionEnabled('changeOrder')) && (
               <SectionChangeOrder
                 data={jobData.changeOrder}
                 contractRcv={jobData.financials.totalApprovedRcv}
@@ -1049,7 +1052,7 @@ export default function App() {
               />
             )}
 
-            {workflow.available && workflowSectionEnabled(activeTab) && ['updates', 'handoff', 'selections', 'closeout', 'changeOrder'].includes(activeTab) ? <React.Suspense fallback={<p role="status">Loading production workspace…</p>}><WorkflowWorkspace {...workflowProps} section={activeTab === 'changeOrder' ? 'changes' : activeTab as 'updates' | 'handoff' | 'selections' | 'closeout'} onNavigate={handleNavigate} /></React.Suspense> : null}
+            {workflow.available && (activeTab !== 'changeOrder' || !!recordId) && workflowSectionEnabled(activeTab) && ['updates', 'handoff', 'selections', 'closeout', 'changeOrder'].includes(activeTab) ? <React.Suspense fallback={<p role="status">Loading production workspace…</p>}><WorkflowWorkspace {...workflowProps} section={activeTab === 'changeOrder' ? 'changes' : activeTab as 'updates' | 'handoff' | 'selections' | 'closeout'} onNavigate={handleNavigate} /></React.Suspense> : null}
 
             {activeTab === 'checklist' && (
               <SectionChecklist
@@ -1084,22 +1087,6 @@ export default function App() {
               /></>
             )}
 
-            {activeTab !== 'home' && (
-              <nav className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4" aria-label="Job section actions">
-                {previousSection ? (
-                  <button type="button" onClick={() => handleNavigate(previousSection.id)} className="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-secondary hover:bg-surface hover:text-primary">
-                    <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                    {previousSection.label}
-                  </button>
-                ) : <span className="text-sm text-muted">Upload an intake or enter the job details manually.</span>}
-                {nextSection && (
-                  <button type="button" onClick={() => handleNavigate(nextSection.id)} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-primary hover:border-line-emphasis hover:bg-canvas">
-                    Next: {nextSection.label}
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                )}
-              </nav>
-            )}
           </div>
         </div>
       </main>

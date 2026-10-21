@@ -17,13 +17,14 @@ const sectionLabels = {
   checklist: 'Checklist', changeOrder: 'Change Order', documents: 'Documents',
 };
 async function navigate(page: Page, section: keyof typeof sectionLabels) {
-  const group = ['customer', 'insurance', 'financials', 'mortgage'].includes(section) ? 'Job details'
-    : ['team', 'productionNotes', 'checklist', 'changeOrder'].includes(section) ? 'Production' : sectionLabels[section];
+  const group = ['customer', 'intake', 'insurance', 'financials', 'mortgage'].includes(section) ? 'Job details'
+    : ['team', 'productionNotes', 'checklist'].includes(section) ? 'Production' : section === 'changeOrder' ? 'Changes' : sectionLabels[section];
   await page.getByRole('navigation', { name: 'Main navigation', exact: true })
     .getByRole('button', { name: group, exact: true }).click();
   if (group === 'Job details' || group === 'Production') {
-    await page.getByRole('navigation', { name: `${group} sections`, exact: true })
-      .getByRole('button', { name: new RegExp(`^${sectionLabels[section]}(?:\\s|$)`) }).click();
+    if ((page.viewportSize()?.width ?? 1440) < 640) await page.getByRole('combobox', { name: `${group} section`, exact: true }).selectOption({ label: sectionLabels[section] });
+    else await page.getByRole('navigation', { name: `${group} sections`, exact: true })
+        .getByRole('button', { name: new RegExp(`^${sectionLabels[section]}(?:\\s|$)`) }).click();
   }
 }
 
@@ -495,7 +496,7 @@ test('dashboard next steps focus the missing field and sync notices leave phone 
   await expect(page.getByRole('progressbar', { name: 'Required job fields' })).toHaveAttribute('aria-valuenow', '2');
   await context.setOffline(true);
   const navigation = page.getByRole('navigation', { name: 'Main navigation', exact: true });
-  await expect(page.getByText('Offline', { exact: true })).toBeVisible();
+  await expect(page.locator('#main-content').getByRole('status').filter({ hasText: /^Offline(?: · \d+ pending)?$/ })).toBeVisible();
   await navigation.getByRole('button', { name: 'Job details', exact: true }).click();
   await expect(page.locator('#customer-lossAddress')).toHaveValue('123 Test Street');
   await expect(navigation.getByRole('button', { name: 'Job details', exact: true })).toHaveAttribute('aria-current', 'page');

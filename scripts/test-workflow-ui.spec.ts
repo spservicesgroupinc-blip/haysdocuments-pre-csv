@@ -12,6 +12,90 @@ async function start(page: Page, mock: WorkflowMock) {
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
 }
 
+test('quick changes are reachable on phone and desktop and unfinished inputs recover', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  const mock = new WorkflowMock(); mock.seedWorkflow(); await start(page, mock);
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const nav = page.getByRole('navigation', { name: 'Main navigation', exact: true });
+    await expect(nav.getByRole('button')).toHaveText(['Home', 'Job details', 'Changes', 'Production', 'Documents']);
+    await nav.getByRole('button', { name: 'Changes', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Quick change order', exact: true })).toBeVisible();
+    const brandButtonColor = await page.getByRole('button', { name: 'Save job', exact: true }).evaluate(node => getComputedStyle(node).backgroundColor);
+    await expect(page.getByRole('button', { name: 'Review change order', exact: true })).toHaveCSS('background-color', brandButtonColor);
+    await expect(page.getByRole('button', { name: 'Review change order', exact: true })).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(page.getByRole('heading', { name: 'Bring in your job information' })).toBeHidden();
+    await expect(page.getByRole('navigation', { name: 'Job section actions' })).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: `test-results/quick-change-${width}.png`, fullPage: true });
+  }
+  await page.getByLabel('What needs to change?', { exact: true }).fill('Replace kitchen base cabinet after concealed damage.');
+  await page.getByLabel('Change amount ($)', { exact: true }).fill('250.17');
+  await page.getByRole('navigation', { name: 'Main navigation', exact: true }).getByRole('button', { name: 'Documents', exact: true }).click();
+  await openWorkflow(page, 'Change Order');
+  await expect(page.getByLabel('What needs to change?', { exact: true })).toHaveValue('Replace kitchen base cabinet after concealed damage.');
+  await page.reload(); await openWorkflow(page, 'Change Order');
+  await expect(page.getByLabel('Change amount ($)', { exact: true })).toHaveValue('250.17');
+  await page.getByRole('button', { name: 'Add change / supplement', exact: true }).click();
+  await expect(page.getByLabel('Scope of this change', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Register status', { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('quick change review submits exact credits and zero amounts once with approval pending', async ({ page }) => {
+  const mock = new WorkflowMock(); mock.seedWorkflow(); await start(page, mock);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Quick change order', exact: true }).click();
+  for (const [index, amount] of ['-125.37', '0'].entries()) {
+    if (index) await page.getByRole('button', { name: 'Quick change order', exact: true }).click();
+    await page.getByLabel('What needs to change?', { exact: true }).fill(`Reviewed change ${index + 1}`);
+    await page.getByLabel('Change amount ($)', { exact: true }).fill(amount);
+    await page.getByRole('button', { name: 'Review change order', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Review change order', exact: true })).toBeVisible();
+    await expect(page.getByText('Workflow customer · WF-UI-100', { exact: true })).toBeVisible();
+    expect([...mock.items.values()].filter(item => item.kind === 'change')).toHaveLength(index);
+    await page.getByRole('button', { name: 'Submit change order', exact: true }).click();
+    await expect.poll(() => [...mock.items.values()].filter(item => item.kind === 'change').length).toBe(index + 1);
+    const saved = [...mock.items.values()].find(item => item.kind === 'change' && item.payload.scope === `Reviewed change ${index + 1}`)!;
+    expect(saved.payload).toMatchObject({ amountCents: index ? 0 : -12537, lifecycle: 'submitted', number: `CO-00${index + 1}`, customerDecision: { status: 'pending' } });
+  }
+});
+
+test('quick change draft saves offline and remains queued until reconnecting', async ({ page, context }) => {
+  const mock = new WorkflowMock(); mock.seedWorkflow(); await start(page, mock); await openWorkflow(page, 'Change Order');
+  await page.getByLabel('What needs to change?', { exact: true }).fill('Offline field change');
+  await page.getByLabel('Change amount ($)', { exact: true }).fill('300.01');
+  await context.setOffline(true);
+  await page.getByRole('button', { name: 'Save change draft', exact: true }).click();
+  await expect(page.getByText('Offline field change', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Change draft saved on this device/)).toBeVisible();
+  expect([...mock.items.values()].filter(item => item.kind === 'change')).toHaveLength(0);
+  await context.setOffline(false);
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect.poll(() => [...mock.items.values()].filter(item => item.kind === 'change').length).toBe(1);
+  expect([...mock.items.values()].find(item => item.kind === 'change')!.payload).toMatchObject({ amountCents: 30001, lifecycle: 'draft', number: '' });
+});
+
+test('quick changes for a new job use the saved job identity', async ({ page }) => {
+  const mock = new WorkflowMock(); await mock.install(page.context());
+  await page.route('https://script.google.com/macros/s/*/exec', route => {
+    const body = route.request().postDataJSON();
+    if (body.action === 'listWorkspaceDrafts') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, data: { drafts: [] } }) });
+    return route.fallback();
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Quick change order', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Quick change order', exact: true })).toBeHidden();
+  await page.getByLabel('Customer / job name', { exact: true }).fill('New field job');
+  await page.getByRole('button', { name: 'Save job and continue', exact: true }).click();
+  await page.getByLabel('What needs to change?', { exact: true }).fill('New job additional repairs');
+  await page.getByLabel('Change amount ($)', { exact: true }).fill('99.99');
+  await page.getByRole('button', { name: 'Save change draft', exact: true }).click();
+  await expect.poll(() => [...mock.items.values()].filter(item => item.kind === 'change').length).toBe(1);
+  expect([...mock.items.values()].find(item => item.kind === 'change')!.jobId).toBe(mock.job.recordId);
+  expect(mock.job.customer.customerName).toBe('New field job');
+});
+
 test('two editors refresh shared progress; completion removes its reminder and reopening restores it', async ({ page, browser }) => {
   const mock = new WorkflowMock(); mock.seedWorkflow();
   await start(page, mock);

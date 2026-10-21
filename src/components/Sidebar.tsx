@@ -66,9 +66,9 @@ interface WorkspaceNavigationProps {
 
 const DESTINATIONS = [
   { id: 'home', label: 'Home', icon: Home, sections: ['home'] },
-  { id: 'intake', label: 'Intake', icon: FileInput, sections: ['intake'] },
-  { id: 'customer', label: 'Job details', icon: UserCircle, sections: ['customer', 'insurance', 'financials', 'mortgage'] },
-  { id: 'team', label: 'Production', icon: CheckCircle, sections: ['team', 'updates', 'handoff', 'selections', 'closeout', 'productionNotes', 'checklist', 'changeOrder'] },
+  { id: 'customer', label: 'Job details', icon: UserCircle, sections: ['customer', 'intake', 'insurance', 'financials', 'mortgage'] },
+  { id: 'changeOrder', label: 'Changes', icon: FileEdit, sections: ['changeOrder'] },
+  { id: 'team', label: 'Production', icon: CheckCircle, sections: ['team', 'updates', 'handoff', 'selections', 'closeout', 'productionNotes', 'checklist'] },
   { id: 'documents', label: 'Documents', icon: FileCheck, sections: ['documents'] },
 ] as const;
 
@@ -77,7 +77,7 @@ export const WorkspaceNavigation: React.FC<WorkspaceNavigationProps> = ({
   activeTab, onNavigate, missingFieldCounts, showMissingWarnings, workflowEnabled = false,
 }) => {
   const activeDestination = DESTINATIONS.find((item) => (item.sections as readonly string[]).includes(activeTab))!;
-  const sections = WORKSPACE_SECTIONS.filter((section) => (activeDestination.sections as readonly string[]).includes(section.id) && (workflowEnabled ? workflowSectionEnabled(section.id) : !['updates', 'handoff', 'selections', 'closeout'].includes(section.id)));
+  const sections = activeDestination.sections.map(id => WORKSPACE_SECTIONS.find(section => section.id === id)!).filter(section => workflowEnabled ? workflowSectionEnabled(section.id) : !['updates', 'handoff', 'selections', 'closeout'].includes(section.id));
 
   return (
     <div className="mb-5 sm:mb-6">
@@ -101,8 +101,8 @@ export const WorkspaceNavigation: React.FC<WorkspaceNavigationProps> = ({
       </nav>
       {sections.length > 1 && (
         <>
-        {activeDestination.label === 'Production' && workflowEnabled ? <label className="mt-3 block text-sm font-medium text-body sm:hidden">Production section<select className="mt-1 min-h-11 w-full rounded-lg border border-line-strong bg-surface px-3 text-primary" value={activeTab} onChange={event => onNavigate(event.target.value as WorkspaceTab)}>{sections.map(section => <option key={section.id} value={section.id}>{section.label}</option>)}</select></label> : null}
-        <nav aria-label={`${activeDestination.label} sections`} className={`mt-3 gap-1 rounded-xl border border-line bg-surface p-1 sm:flex sm:flex-wrap sm:w-fit ${activeDestination.label === 'Production' && workflowEnabled ? 'hidden' : 'grid grid-cols-2'}`}>
+        <label className="mt-3 block text-sm font-medium text-body sm:hidden">{activeDestination.label} section<select className="mt-1 min-h-11 w-full rounded-lg border border-line-strong bg-surface px-3 text-primary" value={activeTab} onChange={event => onNavigate(event.target.value as WorkspaceTab)}>{sections.map(section => <option key={section.id} value={section.id}>{section.label}</option>)}</select></label>
+        <nav aria-label={`${activeDestination.label} sections`} className="mt-3 hidden gap-1 rounded-xl border border-line bg-surface p-1 sm:flex sm:flex-wrap sm:w-fit">
           {sections.map((section) => {
             const Icon = section.icon;
             const missing = showMissingWarnings ? missingFieldCounts?.[section.id] ?? 0 : 0;
