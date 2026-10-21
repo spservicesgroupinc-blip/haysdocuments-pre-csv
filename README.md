@@ -86,7 +86,7 @@ text or separately obtained OCR text.
 The production build ships a web app manifest and service worker (`src/sw.ts`) that precache
 the shell — including the pdf.js worker — so the app opens and generates documents offline.
 Database reads come from an IndexedDB mirror; writes queue in an outbox and replay when the
-connection returns (last write wins; a notice appears when the server copy moved underneath).
+connection returns. Revision conflicts retain both copies for explicit review.
 
 - Test locally: `npm run build && npm run preview`, then DevTools → Application (manifest,
   service worker, cache) and Network → Offline.
@@ -127,19 +127,52 @@ connection returns (last write wins; a notice appears when the server copy moved
   bottom-right shows the queue, a "Sync now" button, and reconnect notices.
 - The current workspace record autosaves locally (debounced), so a reload/crash never loses
   in-progress work.
-- If someone else changed a record while you had unsaved edits, syncing still succeeds (your
-  version wins) and a notice tells you to review it.
+- If someone else changed the same record, the device copy stays queued. Compare both versions
+  and explicitly choose the shared copy or save the reviewed device copy at the current revision.
 
 ## Known issues
 
-- `npm run apps:test` (and therefore `npm run verify`) still fails: the test harness
-  `scripts/test-apps-script.ts` targets the **superseded** backend API. It calls helpers such as
-  `normalizeRecord_` and `oneOf_`, which the live backend does not define. The live backend is the
-  single file `src/apps-script/Code.gs`, which implements the HTTP actions the
-  front-end uses and needs no porting of its own — the harness does.
-- `npm run apps:register` also targets the superseded API (`api_registrationInfo_`
-  is missing from the current backend). These legacy harness failures prevent the
-  aggregate `npm run verify` command from completing. The save-specific checks above
-  exercise the current backend and client directly.
+- The legacy backend and registration harnesses have been migrated to the current API contracts.
+  `apps:test`, `apps:register`, and the dedicated workflow harness now pass locally.
 - `npm run clean` references a `server.js` that has never existed (template leftover).
 
+
+## Shared restoration workspace
+
+The six workflow capabilities are job progress/next action, dated updates and supporting files,
+production handoff, selections with recorded decisions, multiple changes, and reviewed closeout.
+Home, Intake, Job details, Production, and Documents remain the five main destinations.
+
+Supporting records and private files use Apps Script, Sheets, and Drive. `JobItems` holds typed
+revisioned records; `JobMutations` journals stable mutation IDs for replay after unknown outcomes.
+Core saves also send protocol version 2 and expected revisions. No conflict silently overwrites
+another editor. The comparison keeps the device copy until the user resolves it.
+
+Draft backups are scoped to account/device/job. The old shared cloud draft is read-only recovery:
+Home ? Recover an older shared workspace ? preview ? explicitly restore. Existing device work
+is saved before switching to a recovery copy. Pending notes, file blobs, conflicts, and complete
+publication dependency chains survive reloads. Photo copies are normalized, HEIC is rejected,
+and notes remain saved if file preparation fails. Photos/PDFs have preview, download, and caption
+controls. Sync now retries both core and supporting work; counts appear in the existing sync area.
+
+Reviewed handoff/change/closeout versions store immutable source JSON and constituent outputs.
+Issued changes download their saved PDF; amendments receive a new record. External closeout
+ZIPs use field allowlists and reviewed file manifests, never the private source JSON. Record
+completion separately from export. Recorded approvals are decisions, not electronic signatures.
+
+`VITE_WORKFLOW_RELEASE` controls authoring stages: 0 hides workflow authoring, 1 enables
+progress/updates/handoff, 2 adds selections/changes, and 3 adds closeout (default). Keep the
+revision protocol during rollback; published files remain in Documents. There is no in-app
+experimental settings panel. Capabilities still gate sections when the backend is older.
+
+| Verification | Command |
+| --- | --- |
+| Domain, migration, offline queue, exports | `npm run workflow:test` |
+| Backend recovery, roles, files, numbering | `npm run apps:test:workflow` |
+| Built desktop/mobile workflow UI | `npm run build`, then `npm run workflow:ui:test` |
+| Built service worker, offline reload, update | `npm run build`, then `npm run pwa:ui:test` |
+| Original save/intake/theme regressions | `npm run save:ui:test` |
+
+See [verification and deployment status](tasks/verification.md) and
+[workflow rollout instructions](tasks/rollout.md). A passing ping does not prove signed-in
+writes, capability support, or that the local Code.gs was deployed.

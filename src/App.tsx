@@ -150,7 +150,7 @@ export default function App() {
   const [syncState, setSyncState] = useState<SyncState>(getSyncState);
   const workflow = useJobWorkflow(jobData, isAuthReady && workspaceReady, currentUser?.email.toLowerCase() || workflowOwner());
   const workflowSummaries = useWorkflowSummaries(savedJobs, workflow.available, currentUser?.email.toLowerCase() || workflowOwner());
-  const workflowProps = { job: jobData, items: workflow.items, readOnly: currentUser?.role === 'viewer', loading: workflow.loading, pendingCount: workflow.pendingCount, lastRefreshedAt: workflow.lastRefreshedAt, fromCache: workflow.fromCache, error: workflow.error, actorEmail: currentUser?.email, isAdmin: currentUser?.role === 'admin', onSave: workflow.save, onDelete: workflow.remove, onAttach: workflow.attach, onDownload: workflow.download, onExport: workflow.exportDocument, onRefresh: workflow.refresh };
+  const workflowProps = { job: jobData, items: workflow.items, readOnly: currentUser?.role === 'viewer', loading: workflow.loading, pendingCount: workflow.pendingCount, lastRefreshedAt: workflow.lastRefreshedAt, fromCache: workflow.fromCache, error: workflow.error, actorEmail: currentUser?.email, isAdmin: currentUser?.role === 'admin', onSave: workflow.save, onDelete: workflow.remove, onAttach: workflow.attach, onDownload: workflow.download, onPreviewFile: workflow.previewFile, onExport: workflow.exportDocument, onRefresh: workflow.refresh };
 
   // Dirty tracking compares the record against the last saved/loaded baseline,
   // so programmatic whole-record replacements never look like user edits.

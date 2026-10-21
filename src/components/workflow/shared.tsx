@@ -1,6 +1,8 @@
 import { cloneElement, isValidElement, useEffect, useId, useState, type ReactElement, type ReactNode } from 'react';
 import type { RestorationJobData } from '../../types/jobData';
 import type { ItemKind, ItemPayloads, JobItem, RecordedDecision } from '../../types/workflow';
+import { SupportingFilePreview } from './SupportingFilePreview';
+import { SupportingFileCaption } from './SupportingFileCaption';
 
 export interface WorkflowWorkspaceProps {
   job: RestorationJobData;
@@ -19,6 +21,7 @@ export interface WorkflowWorkspaceProps {
   onDelete: (item: JobItem) => Promise<void>;
   onAttach: (parent: { kind: ItemKind; itemId: string }, files: File[]) => Promise<void>;
   onDownload: (item: JobItem<'attachment'>) => Promise<void>;
+  onPreviewFile?: (item: JobItem<'attachment'>) => Promise<Blob>;
   onExport: (type: 'handoff' | 'change_order' | 'closeout', options?: { audience?: 'internal' | 'customer' | 'carrier'; changeId?: string; attachmentIds?: string[]; final?: boolean }) => Promise<void>;
   onRefresh: () => Promise<void>;
 }
@@ -99,7 +102,7 @@ export function AttachmentList({ parent, props }: { parent: { kind: ItemKind; it
   const action = useAction();
   const attachments = props.items.filter((item): item is JobItem<'attachment'> => item.kind === 'attachment' && !item.deletedAt && item.payload.parent.kind === parent.kind && item.payload.parent.itemId === parent.itemId);
   return <div className="min-w-0 space-y-2">
-    {attachments.length ? <ul className="space-y-2">{attachments.map(item => <li key={item.itemId} className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-line px-3 py-2"><span className="min-w-0 flex-1 break-words text-sm text-body">{item.payload.filename}<span className="ml-2 text-xs text-muted">{item.payload.uploadState === 'ready' ? 'Ready' : item.payload.uploadState === 'failed' ? 'Needs upload retry' : 'Queued for upload'}</span></span><button type="button" className={button} disabled={action.busy || item.payload.uploadState !== 'ready'} onClick={() => void action.run(() => props.onDownload(item))}>Download</button>{!props.readOnly ? <button type="button" className={button} disabled={action.busy} onClick={() => void action.run(() => props.onDelete(item), 'Removal saved on this device.')}>Remove file</button> : null}</li>)}</ul> : null}
+    {attachments.length ? <ul className="space-y-2">{attachments.map(item => <li key={item.itemId} className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-line px-3 py-2"><span className="min-w-0 flex-1 break-words text-sm text-body">{item.payload.filename}<span className="ml-2 text-xs text-muted">{item.payload.uploadState === 'ready' ? 'Ready' : item.payload.uploadState === 'failed' ? 'Needs upload retry' : 'Queued for upload'}</span></span>{props.onPreviewFile ? <SupportingFilePreview item={item} load={() => props.onPreviewFile!(item)} /> : null}<button type="button" className={button} disabled={action.busy || item.payload.uploadState !== 'ready'} onClick={() => void action.run(() => props.onDownload(item))}>Download</button>{!props.readOnly ? <button type="button" className={button} disabled={action.busy} onClick={() => void action.run(() => props.onDelete(item), 'Removal saved on this device.')}>Remove file</button> : null}{!props.readOnly && item.payload.uploadState === 'ready' ? <SupportingFileCaption item={item} save={caption => props.onSave('attachment', item.itemId, { ...item.payload, caption })} /> : null}</li>)}</ul> : null}
     {!props.readOnly ? <Field label="Add photos or PDFs" help="JPEG, PNG, WebP, or PDF; up to 10 files, 5 MiB each. HEIC is not supported."><input className={`${control} file:mr-2 file:rounded file:border-0 file:bg-subtle file:p-2 file:text-primary`} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple disabled={action.busy} onChange={event => { const files = Array.from(event.currentTarget.files ?? []); event.currentTarget.value = ''; if (files.length) void action.run(() => props.onAttach(parent, files), 'Files saved on this device; uploads continue in the background.'); }} /></Field> : null}
     <ActionState action={action} />
   </div>;

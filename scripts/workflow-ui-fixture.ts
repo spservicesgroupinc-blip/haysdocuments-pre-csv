@@ -97,7 +97,7 @@ export class WorkflowMock {
 
 export async function openWorkflow(page: Page, section: 'Updates' | 'Handoff' | 'Selections' | 'Change Order' | 'Closeout') {
   await page.getByRole('navigation', { name: 'Main navigation', exact: true }).getByRole('button', { name: 'Production', exact: true }).click();
-  const picker = page.getByLabel('Production section', { exact: true });
-  if (await picker.isVisible()) await picker.selectOption({ label: section });
+  const picker = page.getByRole('combobox', { name: /^Production section/ });
+  if ((page.viewportSize()?.width ?? 1440) < 640) await picker.selectOption({ label: section });
   else await page.getByRole('navigation', { name: 'Production sections', exact: true }).getByRole('button', { name: section, exact: true }).click();
 }

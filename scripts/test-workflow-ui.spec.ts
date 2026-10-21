@@ -1,6 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import { blankDecision, createCloseout } from '../src/types/workflow';
 import { editor, openWorkflow, WorkflowMock } from './workflow-ui-fixture';
+import { PDFDocument } from 'pdf-lib';
+import JSZip from 'jszip';
 
 async function start(page: Page, mock: WorkflowMock) {
   await mock.install(page.context());
@@ -47,10 +49,10 @@ test('posted notes survive offline reload, retain files and produce only explici
   await page.context().setOffline(true);
   await page.getByLabel('Update', { exact: true }).fill('Cabinet installation finished today.');
   await page.getByRole('button', { name: 'Post update', exact: true }).click();
-  await expect(page.getByText('Cabinet installation finished today.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('listitem').getByText('Cabinet installation finished today.', { exact: true })).toBeVisible();
   await page.reload();
   await openWorkflow(page, 'Updates');
-  await expect(page.getByText('Cabinet installation finished today.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('listitem').getByText('Cabinet installation finished today.', { exact: true })).toBeVisible();
   await page.getByLabel('Use in customer draft', { exact: true }).check();
   await page.getByRole('button', { name: 'Build draft (1 selected)', exact: true }).click();
   const draft = await page.getByLabel('Customer update draft', { exact: true }).inputValue();
@@ -106,4 +108,83 @@ test('mobile dark and light production sections have labeled keyboard controls a
   await page.emulateMedia({ colorScheme: 'light' });
   await page.screenshot({ path: 'test-results/workflow-mobile-light.png', fullPage: true });
   expect(errors).toEqual([]);
+});
+
+test('two editors preserve a conflicting local progress change until explicit review', async ({ page, browser }) => {
+  const mock = new WorkflowMock(); mock.seedWorkflow(); await start(page, mock);
+  const second = await browser.newContext();
+  try {
+    await mock.install(second, { ...editor, email: 'reviewer@example.com', name: 'Reviewer' });
+    const other = await second.newPage(); await other.goto('/');
+    await expect(other.getByRole('heading', { name: 'Job progress', exact: true })).toBeVisible();
+    await other.getByRole('button', { name: 'Edit progress', exact: true }).click();
+    await other.getByLabel('Job stage', { exact: true }).selectOption('ready_for_production');
+    await page.getByRole('button', { name: 'Edit progress', exact: true }).click();
+    await page.getByLabel('Job stage', { exact: true }).selectOption('in_production');
+    await page.getByRole('button', { name: 'Save progress', exact: true }).click();
+    await expect.poll(() => mock.items.get(`workflow:${mock.job.id}`)?.payload).toMatchObject({ stage: 'in_production' });
+    await other.getByRole('button', { name: 'Save progress', exact: true }).click();
+    const review = other.getByRole('region', { name: 'Changes needing review', exact: true });
+    await expect(review).toBeVisible();
+    await expect(review.getByText(/ready_for_production/)).toBeVisible();
+    await expect(review.getByText(/in_production/)).toBeVisible();
+    expect(mock.items.get(`workflow:${mock.job.id}`)?.payload).toMatchObject({ stage: 'in_production' });
+    await review.getByRole('button', { name: 'Save reviewed device version', exact: true }).click();
+    await expect.poll(() => mock.items.get(`workflow:${mock.job.id}`)?.payload).toMatchObject({ stage: 'ready_for_production' });
+    await expect(review).toHaveCount(0);
+  } finally { await second.close(); }
+});
+
+test('supporting PDF upload recovers a lost acknowledgment without duplicating the file or note', async ({ page }) => {
+  const mock = new WorkflowMock(); mock.seedWorkflow(); mock.loseUploadResponse = true;
+  await start(page, mock); await openWorkflow(page, 'Updates');
+  const pdf = await PDFDocument.create(); pdf.addPage();
+  await page.getByLabel('Update', { exact: true }).fill('Reviewed completion evidence');
+  await page.getByLabel('Optional photos or PDFs', { exact: true }).setInputFiles({ name: 'reviewed-evidence.pdf', mimeType: 'application/pdf', buffer: Buffer.from(await pdf.save()) });
+  await page.getByRole('button', { name: 'Post update', exact: true }).click();
+  await expect.poll(() => mock.uploadAttempts).toBe(1);
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect.poll(() => mock.uploadAttempts).toBe(2);
+  await expect(page.getByText('Ready', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByTitle('Preview of reviewed-evidence.pdf', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  expect([...mock.items.values()].filter(item => item.kind === 'attachment')).toHaveLength(1);
+  expect([...mock.items.values()].filter(item => item.kind === 'activity' && item.payload.source === 'manual')).toHaveLength(1);
+});
+
+test('viewers can read updates and published documents without authoring controls', async ({ page }) => {
+  const mock = new WorkflowMock(); mock.seedWorkflow();
+  await mock.install(page.context(), { ...editor, role: 'viewer' });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'View details', exact: true })).toBeVisible();
+  await openWorkflow(page, 'Updates');
+  await expect(page.getByText('Read-only workspace.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Post update', exact: true })).toHaveCount(0);
+  await openWorkflow(page, 'Selections');
+  await expect(page.getByRole('button', { name: 'Add selection', exact: true })).toHaveCount(0);
+});
+
+test('reviewed closeout publishes its frozen files and downloads exactly the displayed manifest', async ({ page }) => {
+  const mock = new WorkflowMock(); mock.seedWorkflow(); const closeout = createCloseout();
+  closeout.completionDate = '2026-10-21'; closeout.completionOverrideReason = 'Office reviewed completion evidence.';
+  mock.seed('closeout', `closeout:${mock.job.id}`, closeout);
+  await start(page, mock); await openWorkflow(page, 'Closeout');
+  await page.getByLabel('Packet audience', { exact: true }).selectOption('customer');
+  await page.getByLabel('I reviewed the summary audience and every selected attachment for this packet.', { exact: true }).check();
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Publish reviewed packet', exact: true }).click();
+  const download = await downloading;
+  const path = await download.path();
+  const { readFile } = await import('node:fs/promises');
+  const zip = await JSZip.loadAsync(await readFile(path!));
+  const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'));
+  expect(Object.values(zip.files).filter(file => !file.dir).map(file => file.name).sort()).toEqual([...manifest.entries].sort());
+  expect(manifest.reviewState).toBe('final');
+  expect(manifest.audience).toBe('customer');
+  expect(Object.keys(zip.files).some(name => name.includes('snapshot'))).toBe(false);
+  await expect.poll(() => [...mock.items.values()].filter(item => item.kind === 'artifact' && item.payload.reviewState === 'final').length).toBe(1);
+  expect(mock.items.get(`workflow:${mock.job.id}`)?.payload).toMatchObject({ stage: 'intake' });
 });

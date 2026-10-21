@@ -33,9 +33,11 @@ export function useJobWorkflow(job: RestorationJobData, enabled: boolean, owner:
     const failed = queue.find(op => op.jobId === jobId && op.error);
     if (failed) setError(failed.error!);
   }, [owner, jobId, current]);
-  const flush = useCallback(async () => {
+  const flush = useCallback(async (): Promise<void> => {
     if (!owner || !current() || !navigator.onLine) return;
-    if (flushBusy.current) return flushBusy.current;
+    // A note can start syncing before photo preparation finishes. Drain again after
+    // that in-flight pass so newly queued files do not wait for the next poll.
+    if (flushBusy.current) { await flushBusy.current; return flush(); }
     const task = (async () => {
       await flushOutboxNow(false);
       await flushWorkflowQueue(owner, op => sendWorkflowOperation(owner, op), current);
@@ -110,6 +112,7 @@ export function useJobWorkflow(job: RestorationJobData, enabled: boolean, owner:
     await reloadLocal(); void flush().catch(err => setError(errorText(err)));
   };
   const attachmentBlob = async (item: JobItem<'attachment'>) => {
+    if (!current() || item.jobId !== jobId) throw new Error('Open this file from the current signed-in job.');
     const cached = await cachedWorkflowBlob(owner, jobId, item.itemId);
     if (cached) return cached;
     if (!navigator.onLine) throw new Error(`${item.payload.filename} is not cached on this device. Reconnect to download it.`);
@@ -179,8 +182,8 @@ export function useJobWorkflow(job: RestorationJobData, enabled: boolean, owner:
       if (options.final && !workflow.baselineReviewed) throw new Error('Review and save the contract baseline before issuing a change.');
       bytes = await docs.generateRegisteredChangeOrder(currentJob, change, workflow, itemOf(source, 'change'), snapshotOptions);
       filename = `${currentJob.customer.jobNumber}_${change.payload.number || 'Draft_Change'}.pdf`;
-      sourceRevisions = { [`job:${jobId}`]: currentJob.revision ?? 1, [`change:${change.itemId}`]: change.revision, ...Object.fromEntries(itemOf(source, 'workflow').map(item => [`workflow:${item.itemId}`, item.revision])) };
-      snapshot = { job: currentJob, change, workflow, sourceRevisions, generatedAt, generatedBy };
+      sourceRevisions = { [`job:${jobId}`]: currentJob.revision ?? 1, ...Object.fromEntries(itemOf(source, 'change').map(item => [`change:${item.itemId}`, item.revision])), ...Object.fromEntries(itemOf(source, 'workflow').map(item => [`workflow:${item.itemId}`, item.revision])) };
+      snapshot = { job: currentJob, change, priorChanges: itemOf(source, 'change'), workflow, sourceRevisions, generatedAt, generatedBy };
       outputs = [{ fileName: filename, mimeType: 'application/pdf', bytes, sha256: await sha256Bytes(bytes) }];
     }
     if (options.final) {
@@ -203,5 +206,5 @@ export function useJobWorkflow(job: RestorationJobData, enabled: boolean, owner:
     await reloadLocal();
   };
   const resolve = async (itemId: string, choice: 'local' | 'server') => { await resolveWorkflowConflict(owner, jobId, itemId, choice); await reloadLocal(); await flush(); };
-  return { items, available, loading, pendingCount, error, conflicts, lastRefreshedAt, fromCache, refresh, save, remove, attach, download, exportDocument, resolve };
+  return { items, available, loading, pendingCount, error, conflicts, lastRefreshedAt, fromCache, refresh, save, remove, attach, download, previewFile: attachmentBlob, exportDocument, resolve };
 }

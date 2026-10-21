@@ -4,9 +4,43 @@ import { IDBFactory } from 'fake-indexeddb';
 import { createEmptyJob } from '../src/types/jobData';
 import { createWorkflow, itemOf } from '../src/types/workflow';
 globalThis.indexedDB = new IDBFactory();
+const legacyJob = { recordId: 'legacy-job', record: { customer: { customerName: 'Retained draft' }, customLegacyField: 'keep me' }, syncState: 'pending-save', owner: 'office@example.com' };
+const legacyOperation = { id: 1, type: 'save', recordId: 'legacy-job', job: legacyJob.record, owner: 'office@example.com' };
+await new Promise<void>((resolve, reject) => {
+  const request = indexedDB.open('hays.docsuite', 1);
+  request.onupgradeneeded = () => {
+    const db = request.result;
+    db.createObjectStore('jobs', { keyPath: 'recordId' });
+    db.createObjectStore('outbox', { keyPath: 'id', autoIncrement: true });
+    db.createObjectStore('drafts', { keyPath: 'id' });
+  };
+  request.onerror = () => reject(request.error);
+  request.onsuccess = () => {
+    const db = request.result, tx = db.transaction(['jobs', 'outbox', 'drafts'], 'readwrite');
+    tx.objectStore('jobs').put(legacyJob);
+    tx.objectStore('outbox').put(legacyOperation);
+    tx.objectStore('drafts').put({ id: 'legacy-draft', job: legacyJob.record });
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onabort = () => reject(tx.error);
+  };
+});
 const store = await import('../src/services/workflowStore');
 const owner = 'office@example.com';
 const payload = createWorkflow(createEmptyJob());
+
+test('v1 upgrade preserves jobs, unknown fields, drafts and pending writes while adding workflow stores', async () => {
+  const { openWorkspaceDb } = await import('../src/services/localDb');
+  const db = await openWorkspaceDb();
+  assert.equal(db.version, 2);
+  for (const name of ['workflowItems', 'workflowOutbox', 'workflowBlobs', 'workflowConflicts']) assert.ok(db.objectStoreNames.contains(name));
+  const read = (name: string, key: IDBValidKey) => new Promise((resolve, reject) => {
+    const request = db.transaction(name, 'readonly').objectStore(name).get(key);
+    request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+  });
+  assert.deepEqual(await read('jobs', 'legacy-job'), legacyJob);
+  assert.deepEqual(await read('outbox', 1), legacyOperation);
+  assert.deepEqual(await read('drafts', 'legacy-draft'), { id: 'legacy-draft', job: legacyJob.record });
+});
 test('queued items persist atomically and account switching does not expose them', async () => {
   await store.queueWorkflowItem(owner, 'job-1', 'workflow', 'workflow:job-1', payload);
   assert.equal((await store.cachedWorkflowItems(owner, 'job-1')).length, 1);
